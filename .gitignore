@@ -1,0 +1,24 @@
+# build output
+build/
+package/
+*.dll
+*.dll.old
+*.obj
+*.lib
+*.exp
+*.pdb
+*.ilk
+
+# Python
+__pycache__/
+*.py[cod]
+
+# local research, models and renders (third-party art never goes into the repo)
+scratch/
+models/
+captures/
+
+# IDE
+.vs/
+.vscode/
+.idea/
