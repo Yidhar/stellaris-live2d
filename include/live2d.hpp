@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace l2d {
 
@@ -15,15 +16,22 @@ struct Settings {
     int only_width = 0;   // 0 = every portrait size, otherwise only render targets of exactly this size
     int only_height = 0;
 
-    // Live2D: draw a model into the render target of every visible portrait (of the size above, if one is set).
+    // Live2D: draw models into the render targets of the visible portraits (of the size above, if one is set).
+    // Each portrait object gets one of the models, handed out in turn the first time the portrait is seen.
     bool live2d = false;
     std::string core_dll;  // path of Live2DCubismCore.dll (Live2D's, or a compatible one)
-    std::string model;     // path of the model's model3.json
-    float view_x = 0.44f;  // the part of the model canvas shown: centre from the left, centre from the top,
-    float view_y = 0.19f;  // and height, all as fractions of the canvas
-    float view_h = 0.26f;
-    int fps = 30;          // how often the model is advanced and redrawn
-    bool physics = true;   // secondary motion from the model's physics3.json
+    struct ModelEntry {
+        std::string path;       // path of the model's model3.json
+        bool auto_view = false; // work the view out from the model's geometry instead of using view_x/y/h
+        float auto_body = 0.46f; // with auto_view: how much of the figure's height the portrait shows, from the head down
+        float view_x = 0.44f;   // the part of the model canvas shown: centre from the left, centre from the top,
+        float view_y = 0.19f;   // and height, all as fractions of the canvas
+        float view_h = 0.26f;
+        bool operator==(const ModelEntry&) const = default;
+    };
+    std::vector<ModelEntry> models;
+    int fps = 30;          // how often a model is advanced and redrawn
+    bool physics = true;   // secondary motion from the models' physics3.json
 
     bool operator==(const Settings&) const = default;
 };

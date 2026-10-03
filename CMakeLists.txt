@@ -34,6 +34,10 @@ endif()
 add_executable(l2d_view src/view_main.cpp)
 target_link_libraries(l2d_view PRIVATE l2d_core)
 
+# l2d_bench.exe: what N models drawn at once cost, CPU and GPU
+add_executable(l2d_bench src/bench_main.cpp)
+target_link_libraries(l2d_bench PRIVATE l2d_core dxgi)
+
 # stellaris_live2d.dll: Live2D portraits for Stellaris
 add_library(stellaris_live2d SHARED
     src/live2d_main.cpp

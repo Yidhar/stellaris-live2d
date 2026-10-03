@@ -34,7 +34,8 @@ Stellaris 的肖像是骨骼动画的 2D 人物，渲染到一张渲染目标纹
 |---|---|---|
 | `live2d` | `0` | 把模型画进每个可见肖像的渲染目标 |
 | `core_dll` | | `Live2DCubismCore.dll` 的路径 |
-| `model` | | 模型 `model3.json` 的路径 |
+| `model` | | 模型 `model3.json` 的路径（一个模型，配合 `view_*` 使用） |
+| `models` | | 多个模型，用 `;` 分隔：`path`、`path\|x,y,h`（指定裁剪）或 `path\|auto` / `path\|auto:0.5`（按模型自动算裁剪：从头顶往下取人物身高的这个比例，默认 `0.46`）。每个肖像第一次出现时按顺序分到一个模型 |
 | `only_width`、`only_height` | `0` | 只处理渲染目标恰好是这个大小的肖像（`0` = 所有大小）；游戏的角色肖像是 575×380 |
 | `view_x`、`view_y`、`view_h` | `0.44`、`0.19`、`0.26` | 显示模型画布的哪一部分：中心距左边、中心距上边、高度，都是画布的比例 |
 | `fps` | `30` | 模型每秒推进和重绘多少次 |
@@ -50,7 +51,18 @@ build\Release\l2d_view.exe --core Live2DCubismCore.dll --model model3.json --out
     --size 575x380 --view 0.44,0.19,0.26 [--motion touch_1 --time 2.0] [--no-physics] [--param ParamAngleX=20]
 ```
 
-`python scripts\capture_game.py out.png` 会保存游戏窗口客户区的截图（窗口必须可见且没有被遮住）。
+`--view auto`（或 `auto:0.5`）会打印插件为该模型自动算出的裁剪。`python scripts\capture_game.py out.png` 会保存游戏窗口客户区的截图（窗口必须可见且没有被遮住）。
+
+### 同时画很多模型的开销
+
+`l2d_bench.exe` 按插件的方式（推进、在延迟上下文里录制、执行）每步画 N 个不同的模型，报告各阶段的 CPU 时间和用时间戳查询得到的 GPU 时间：
+
+```
+build\Release\l2d_bench.exe --core Live2DCubismCore.dll --size 575x380 --frames 300 --counts 1,6,12,24 ^
+    --model a\model3.json^|auto --model b\model3.json^|auto [--no-physics]
+```
+
+`python scripts\ingame_multi_bench.py` 在真实游戏里跑几组模型（要先打开一个有肖像的界面，并加载 stellaris-perf 仓库的 `stellaris_bench.dll` 作为帧计数器），和关闭插件时的每秒帧数对比。
 
 ## 编译
 
@@ -67,9 +79,10 @@ DLL 只适用于它的 SDK 所定位的那个 `stellaris.exe`（加载时检查�
 
 1. **已完成：** 钩子、纹理写入、恢复、卸载。
 2. **已完成：** Core 加载、模型、动作、物理、渲染器、画进游戏。
-3. 按名字把肖像绑定到模型（让不同领袖可以用不同模型），按界面裁剪，状态变体（例如受伤），触摸反应。
-4. 一个用于参数、动作和表情的小型控制接口。
-5. 由 CI 发布构建。
+3. **已完成：** 同时多个模型，每个肖像一个，按顺序分配。
+4. 肖像组 mod：mod 照常注册自己的肖像，再用一个额外文件声明其中哪些是 Live2D（或 Spine）模型、以及它们如何响应（鼠标跟随、点击、拖拽、缩放）；DLL 提供运行时。见 `docs/portrait-mod-design.md`。
+5. 按界面裁剪，状态变体（例如受伤）。
+6. 由 CI 发布构建。
 
 ## 授权
 

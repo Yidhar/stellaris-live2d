@@ -161,6 +161,40 @@ int Model::FindPart(const std::string& id) const {
     return it == part_index.end() ? -1 : it->second;
 }
 
+void Model::SuggestPortraitView(float* center_x, float* center_y, float* height, float body_fraction) const {
+    std::vector<float> xs, ys;  // canvas fractions, y up
+    const int* vcounts = api_->GetDrawableVertexCounts(model_);
+    const core::Vec2** positions = api_->GetDrawableVertexPositions(model_);
+    const uint8_t* dynamic_flags = api_->GetDrawableDynamicFlags(model_);
+    const float* opacities = api_->GetDrawableOpacities(model_);
+    const int* mask_counts = api_->GetDrawableMaskCounts(model_);
+    for (int i = 0; i < drawable_count; ++i) {
+        if (!(dynamic_flags[i] & core::kIsVisible) || opacities[i] < 0.5f || mask_counts[i] > 0) continue;
+        for (int v = 0; v < vcounts[i]; ++v) {
+            xs.push_back((positions[i][v].x * pixels_per_unit + canvas_origin.x) / canvas_size.x);
+            ys.push_back((positions[i][v].y * pixels_per_unit + canvas_origin.y) / canvas_size.y);
+        }
+    }
+    if (ys.size() < 16) {
+        *center_x = 0.5f; *center_y = 0.3f; *height = 0.3f;
+        return;
+    }
+    auto percentile = [](std::vector<float> v, double p) {
+        const size_t k = (size_t)(p * (v.size() - 1));
+        std::nth_element(v.begin(), v.begin() + k, v.end());
+        return v[k];
+    };
+    const float top = percentile(ys, 0.99), bottom = percentile(ys, 0.01);
+    const float picture = top - bottom;
+    // the horizontal centre of what is drawn in the top third of the picture
+    std::vector<float> band;
+    for (size_t i = 0; i < ys.size(); ++i)
+        if (ys[i] > top - picture / 3.0f) band.push_back(xs[i]);
+    *center_x = percentile(band.empty() ? xs : band, 0.5);
+    *height = picture * body_fraction;
+    *center_y = (1.0f - top) - picture * 0.03f + *height * 0.5f;  // the crop starts 3% of the picture above the head
+}
+
 void Model::SaveParameters() { saved_parameters_.assign(parameter_values, parameter_values + parameter_count); }
 
 void Model::LoadParameters() { std::copy(saved_parameters_.begin(), saved_parameters_.end(), parameter_values); }

@@ -73,6 +73,12 @@ public:
     // Recomputes the vertices from the current parameter values and part opacities.
     void Update();
 
+    // A view (centre from the left, centre from the top, height; fractions of the canvas) that shows the upper body of
+    // whatever the model draws: the top of the picture is the 99th percentile of the visible vertices (so stray decoration
+    // does not count), and the crop starts a little above it and is `body_fraction` of the picture's height (about 0.46
+    // reaches the waist of a standing figure). A rough heuristic for models without a hand-made view; call after Update().
+    void SuggestPortraitView(float* center_x, float* center_y, float* height, float body_fraction = 0.46f) const;
+
 private:
     const core::Api* api_ = nullptr;
     void* moc_memory_ = nullptr;

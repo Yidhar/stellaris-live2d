@@ -3,6 +3,11 @@ import ctypes, ctypes.wintypes as w, sys
 from PIL import ImageGrab
 
 user32 = ctypes.WinDLL("user32")
+# without this, window coordinates are scaled by the display scaling (150% on a 4K screen) while the grab is in real pixels
+try:
+    ctypes.WinDLL("shcore").SetProcessDpiAwareness(2)
+except OSError:
+    user32.SetProcessDPIAware()
 
 
 def game_hwnd():

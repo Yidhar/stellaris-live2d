@@ -28,6 +28,8 @@ int main(int argc, char** argv) {
     std::string motion_group;
     float play_time = 0.0f;
     bool physics = true;
+    bool auto_view = false;
+    float auto_body = 0.46f;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
@@ -35,7 +37,11 @@ int main(int argc, char** argv) {
         else if (a == "--model") model_path = next();
         else if (a == "--out") out_path = next();
         else if (a == "--size") sscanf(next().c_str(), "%ux%u", &width, &height);
-        else if (a == "--view") sscanf(next().c_str(), "%f,%f,%f", &view.center_x, &view.center_y, &view.height);
+        else if (a == "--view") {
+            const std::string v = next();
+            if (v.rfind("auto", 0) == 0) { auto_view = true; if (v.size() > 5 && v[4] == ':') auto_body = (float)atof(v.c_str() + 5); }
+            else sscanf(v.c_str(), "%f,%f,%f", &view.center_x, &view.center_y, &view.height);
+        }
         else if (a == "--no-physics") physics = false;
         else if (a == "--motion") motion_group = next();
         else if (a == "--time") play_time = (float)atof(next().c_str());
@@ -74,6 +80,10 @@ int main(int argc, char** argv) {
         for (float t = 0.0f; t < play_time; t += 1.0f / 30.0f) character.Tick(1.0f / 30.0f);
     } else {
         model.Update();
+    }
+    if (auto_view) {
+        model.SuggestPortraitView(&view.center_x, &view.center_y, &view.height, auto_body);
+        printf("auto view: %.3f,%.3f,%.3f\n", view.center_x, view.center_y, view.height);
     }
 
     ComPtr<ID3D11Device> dev;

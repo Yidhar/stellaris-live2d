@@ -189,7 +189,7 @@ void PaintPortrait(void* portrait) {
         return;
     }
     if (g_mode.load() == 2) {
-        if (Painter().Paint(tex, desc)) ++g_painted; else ++g_l2d_failed;
+        if (Painter().Paint(portrait, tex, desc)) ++g_painted; else ++g_l2d_failed;
         return;
     }
     static uint32_t frame = 0;

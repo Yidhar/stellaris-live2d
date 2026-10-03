@@ -38,8 +38,11 @@ void WriteDefaultIni(const std::string& path) {
               "live2d=0\n"
               "; path of Live2DCubismCore.dll (Live2D's own, or a compatible one such as Purism Core); not shipped with this plugin\n"
               "core_dll=\n"
-              "; path of the model's model3.json\n"
+              "; path of the model's model3.json (one model), shown with the view_* values below\n"
               "model=\n"
+              "; or several models, separated by ';': path, path|x,y,h (that view) or path|auto or path|auto:0.5 (a view worked out from the model: from the head down, that fraction of the figure's height; default 0.46).\n"
+              "; Each portrait gets one of them, handed out in turn when the portrait is first seen.\n"
+              "models=\n"
               "; the part of the model canvas that is shown, as fractions of the canvas: centre from the left, centre from the top, height\n"
               "view_x=0.44\n"
               "view_y=0.19\n"
@@ -53,7 +56,7 @@ void WriteDefaultIni(const std::string& path) {
 }
 
 std::string IniString(const char* key, const std::string& path) {
-    char buf[1024];
+    static char buf[16384];
     GetPrivateProfileStringA("live2d", key, "", buf, sizeof buf, path.c_str());
     std::string v = buf;
     while (!v.empty() && (v.back() == ' ' || v.back() == '\t' || v.back() == '"')) v.pop_back();
@@ -71,10 +74,39 @@ l2d::Settings ReadIni(const std::string& path) {
     l2d::Settings s;
     s.live2d = GetPrivateProfileIntA("live2d", "live2d", 0, path.c_str()) != 0;
     s.core_dll = IniString("core_dll", path);
-    s.model = IniString("model", path);
-    s.view_x = IniFloat("view_x", s.view_x, path);
-    s.view_y = IniFloat("view_y", s.view_y, path);
-    s.view_h = IniFloat("view_h", s.view_h, path);
+    const float vx = IniFloat("view_x", 0.44f, path), vy = IniFloat("view_y", 0.19f, path), vh = IniFloat("view_h", 0.26f, path);
+    // `model=` is one model with the view_* values; `models=` is a list: path|x,y,h or path|auto or just path (view_* values)
+    const std::string single = IniString("model", path);
+    if (!single.empty()) {
+        l2d::Settings::ModelEntry e;
+        e.path = single;
+        e.view_x = vx; e.view_y = vy; e.view_h = vh;
+        s.models.push_back(e);
+    }
+    const std::string list = IniString("models", path);
+    for (size_t pos = 0; pos < list.size();) {
+        size_t end = list.find(';', pos);
+        if (end == std::string::npos) end = list.size();
+        std::string item = list.substr(pos, end - pos);
+        pos = end + 1;
+        while (!item.empty() && (item.back() == ' ' || item.back() == '\t')) item.pop_back();
+        while (!item.empty() && (item.front() == ' ' || item.front() == '\t')) item.erase(item.begin());
+        if (item.empty()) continue;
+        l2d::Settings::ModelEntry e;
+        e.view_x = vx; e.view_y = vy; e.view_h = vh;
+        const size_t bar = item.find('|');
+        e.path = item.substr(0, bar);
+        if (bar != std::string::npos) {
+            const std::string v = item.substr(bar + 1);
+            if (v.rfind("auto", 0) == 0) {
+                e.auto_view = true;
+                if (v.size() > 5 && v[4] == ':') e.auto_body = (float)atof(v.c_str() + 5);
+            } else {
+                sscanf(v.c_str(), "%f,%f,%f", &e.view_x, &e.view_y, &e.view_h);
+            }
+        }
+        s.models.push_back(e);
+    }
     s.fps = GetPrivateProfileIntA("live2d", "fps", 30, path.c_str());
     s.physics = GetPrivateProfileIntA("live2d", "physics", 1, path.c_str()) != 0;
     s.test_pattern = GetPrivateProfileIntA("live2d", "test_pattern", 0, path.c_str()) != 0;
@@ -108,9 +140,8 @@ DWORD WINAPI Worker(LPVOID) {
         const bool changed = first || !(s == last);
         if (changed) {
             l2d::Apply(s);
-            l2d::Log("settings: test_pattern=%d only_size=%dx%d live2d=%d model=%s view=(%.3f, %.3f, %.3f) fps=%d",
-                     (int)s.test_pattern, s.only_width, s.only_height, (int)s.live2d, s.model.c_str(), s.view_x, s.view_y,
-                     s.view_h, s.fps);
+            l2d::Log("settings: test_pattern=%d only_size=%dx%d live2d=%d models=%zu fps=%d physics=%d", (int)s.test_pattern,
+                     s.only_width, s.only_height, (int)s.live2d, s.models.size(), s.fps, (int)s.physics);
             last = s;
             first = false;
         }

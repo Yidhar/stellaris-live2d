@@ -64,7 +64,8 @@ You need a Cubism Core library and a model. Neither is included.
 |---|---|---|
 | `live2d` | `0` | draw the model into the render target of every visible portrait |
 | `core_dll` | | path of `Live2DCubismCore.dll` |
-| `model` | | path of the model's `model3.json` |
+| `model` | | path of the model's `model3.json` (one model, shown with the `view_*` values) |
+| `models` | | several models separated by `;`: `path`, `path\|x,y,h` (that view) or `path\|auto` / `path\|auto:0.5` (a view worked out from the model: from the head down, that fraction of the figure's height, default `0.46`). Each portrait gets one of them, handed out in turn the first time the portrait is seen |
 | `only_width`, `only_height` | `0` | only portraits whose render target has exactly this size (`0` = every size); the game's character portraits are 575×380 |
 | `view_x`, `view_y`, `view_h` | `0.44`, `0.19`, `0.26` | the part of the model canvas shown: centre from the left, centre from the top, and height, as fractions of the canvas |
 | `fps` | `30` | how often the model is advanced and redrawn |
@@ -80,7 +81,22 @@ build\Release\l2d_view.exe --core Live2DCubismCore.dll --model model3.json --out
     --size 575x380 --view 0.44,0.19,0.26 [--motion touch_1 --time 2.0] [--no-physics] [--param ParamAngleX=20]
 ```
 
-`python scripts\capture_game.py out.png` saves the game window's client area (the window must be visible and uncovered).
+`--view auto` (or `auto:0.5`) prints the view the plugin would work out for the model. `python scripts\capture_game.py out.png`
+saves the game window's client area (the window must be visible and uncovered).
+
+### Cost of many models at once
+
+`l2d_bench.exe` draws N different models per step the way the plugin does (advance, record on a deferred context, execute)
+and reports CPU time per stage and GPU time from timestamp queries:
+
+```
+build\Release\l2d_bench.exe --core Live2DCubismCore.dll --size 575x380 --frames 300 --counts 1,6,12,24 ^
+    --model a\model3.json^|auto --model b\model3.json^|auto [--no-physics]
+```
+
+`python scripts\ingame_multi_bench.py` runs several model sets in the real game (a screen with portraits open, and
+`stellaris_bench.dll` from the stellaris-perf repo loaded for the frame counter) and compares frames per second with the
+plugin off.
 
 ## Building
 
@@ -99,10 +115,12 @@ mismatch and installs nothing). After a game patch: `pip install pefile capstone
 
 1. **Done:** hook, texture write, restore, unload.
 2. **Done:** Core loading, model, motions, physics, renderer, drawing into the game.
-3. Bind portraits to models by name (so different leaders can have different models), crop per screen, state variants
-   (for example wounded), touch reactions.
-4. A small control interface for parameters, motions and expressions.
-5. Release builds by CI.
+3. **Done:** several models at once, one per portrait, handed out in turn.
+4. Portrait-group mods: a mod registers its portraits the usual way and says in an extra file which of them are Live2D (or
+   Spine) models and how they react (mouse follow, click, drag, zoom); the DLL provides the runtime. See
+   `docs/portrait-mod-design.md`.
+5. Crop per screen, state variants (for example wounded).
+6. Release builds by CI.
 
 ## Licensing
 
