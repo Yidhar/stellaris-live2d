@@ -53,8 +53,9 @@ You need a Cubism Core library and a model. Neither is included.
    Live2D's terms), or a compatible one such as [Purism Core](https://github.com/SakuraMotion/PurismCore) (MIT). The plugin
    uses the v5 API (`csmGetDrawableRenderOrders` and the colour functions); a library with only the newer API is not
    supported yet.
-2. **A model**: a folder with `model3.json`, the `moc3`, PNG or JPEG textures, and optionally `physics3.json` and motions.
-   Models carry their authors' licenses.
+2. **A model**: a folder with `model3.json`, the `moc3`, textures (PNG, JPEG, or DDS in DXT1/DXT3/DXT5, the format of the game's
+   own textures: a quarter of the video memory, with the mip chain stored in the file) and optionally `physics3.json` and
+   motions. `l2d_pack` converts a model's PNG textures to DXT5. Models carry their authors' licenses.
 3. Build the plugin (below), start the game, and run `python scripts\l2dctl.py load` (`unload`, `reload` and `status` work
    too). The injection lasts for that game session only.
 4. Edit `stellaris_live2d.ini` next to `stellaris.exe` (created on first run, re-read every 2 seconds), open a screen with
@@ -71,6 +72,18 @@ You need a Cubism Core library and a model. Neither is included.
 | `fps` | `30` | how often the model is advanced and redrawn |
 | `physics` | `1` | secondary motion from the model's `physics3.json` |
 | `test_pattern` | `0` | paint a test pattern instead (a check that the hook works) |
+
+### Portrait mods
+
+The intended way to use the plugin is a mod that carries the models and says which portraits they replace: the mod registers
+the portrait keys it wants drawn by the plugin, in the script syntax the game uses for portraits, with a few extra keys
+(`live2d = yes`, `spine = yes`, `live2d_model`, `live2d_view`, `live2d_actions` for mouse follow, click, drag and zoom). The
+plugin reads them from the enabled mods' `gfx/portraits/live2d/*.txt` (a folder the engine ignores) or from their
+`gfx/portraits/portraits/*.txt`, and binds each model to the portrait key the engine reports for a portrait. A game without the
+plugin keeps drawing the normal portraits. See [docs/portrait-mod-design.md](docs/portrait-mod-design.md).
+`python scripts\make_human_mod.py --enable` builds a test mod that replaces the human portraits with the models in
+`models_dxt5\`; `python scripts\load_save.py <save> --folder <folder>` restarts the game on a save and injects the plugin.
+The interactions are parsed but not implemented yet.
 
 ### The offscreen viewer
 
@@ -115,11 +128,9 @@ mismatch and installs nothing). After a game patch: `pip install pefile capstone
 
 1. **Done:** hook, texture write, restore, unload.
 2. **Done:** Core loading, model, motions, physics, renderer, drawing into the game.
-3. **Done:** several models at once, one per portrait, handed out in turn.
-4. Portrait-group mods: a mod registers its portraits the usual way and says in an extra file which of them are Live2D (or
-   Spine) models and how they react (mouse follow, click, drag, zoom); the DLL provides the runtime. See
-   `docs/portrait-mod-design.md`.
-5. Crop per screen, state variants (for example wounded).
+3. **Done:** several models at once; DXT5 textures; portrait-group mods that bind models to portrait keys.
+4. The interactions a mod can declare (mouse follow, click, drag, zoom), Spine, binding per leader or per screen.
+5. State variants (for example wounded).
 6. Release builds by CI.
 
 ## Licensing

@@ -6,6 +6,8 @@
 
 namespace l2d {
 
+struct Registry;
+
 // Log file next to stellaris.exe (stellaris_live2d.log).
 void Log(const char* fmt, ...);
 
@@ -16,8 +18,9 @@ struct Settings {
     int only_width = 0;   // 0 = every portrait size, otherwise only render targets of exactly this size
     int only_height = 0;
 
-    // Live2D: draw models into the render targets of the visible portraits (of the size above, if one is set).
-    // Each portrait object gets one of the models, handed out in turn the first time the portrait is seen.
+    // Live2D: draw models into the render targets of the visible portraits (of the size above, if one is set). Which model a
+    // portrait gets comes from the enabled mods' portrait registrations (portrait_registry.hpp); when no mod registers any,
+    // `models` is used instead and its models are handed out to the portraits in turn, the first time each is seen.
     bool live2d = false;
     std::string core_dll;  // path of Live2DCubismCore.dll (Live2D's, or a compatible one)
     struct ModelEntry {
@@ -30,6 +33,7 @@ struct Settings {
         bool operator==(const ModelEntry&) const = default;
     };
     std::vector<ModelEntry> models;
+    std::vector<std::string> extra_mod_dirs;  // mod root folders read as if they were enabled (development)
     int fps = 30;          // how often a model is advanced and redrawn
     bool physics = true;   // secondary motion from the models' physics3.json
 
@@ -39,7 +43,7 @@ struct Settings {
 // Checks the exe against the SDK and hooks the portrait renderer (the hook passes through while nothing is enabled).
 bool Install(uintptr_t base);
 void Uninstall();
-void Apply(const Settings& s);
+void Apply(const Settings& s, const Registry& registry);
 std::string StatsLine();
 
 } // namespace l2d

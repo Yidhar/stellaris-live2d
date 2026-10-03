@@ -17,6 +17,7 @@ FetchContent_MakeAvailable(minhook)
 # The Live2D side, independent of the game: Cubism Core loader, model, renderer. Shared by the DLL and the offscreen viewer.
 add_library(l2d_core STATIC
     src/cubism_core.cpp
+    src/dds.cpp
     src/live2d_model.cpp
     src/live2d_motion.cpp
     src/live2d_physics.cpp
@@ -34,6 +35,10 @@ endif()
 add_executable(l2d_view src/view_main.cpp)
 target_link_libraries(l2d_view PRIVATE l2d_core)
 
+# l2d_pack.exe: model folder -> the same with DXT5 DDS textures
+add_executable(l2d_pack src/pack_main.cpp)
+target_link_libraries(l2d_pack PRIVATE l2d_core)
+
 # l2d_bench.exe: what N models drawn at once cost, CPU and GPU
 add_executable(l2d_bench src/bench_main.cpp)
 target_link_libraries(l2d_bench PRIVATE l2d_core dxgi)
@@ -43,7 +48,9 @@ add_library(stellaris_live2d SHARED
     src/live2d_main.cpp
     src/portrait_hook.cpp
     src/portrait_live2d.cpp
+    src/portrait_registry.cpp
+    src/pdx_script.cpp
 )
 target_include_directories(stellaris_live2d PRIVATE include sdk)
-target_link_libraries(stellaris_live2d PRIVATE minhook l2d_core)
+target_link_libraries(stellaris_live2d PRIVATE minhook l2d_core shell32 ole32)
 set_target_properties(stellaris_live2d PROPERTIES OUTPUT_NAME "stellaris_live2d" PREFIX "")

@@ -66,7 +66,7 @@ std::atomic<int> g_only_w{ 0 }, g_only_h{ 0 };
 // counters, read by StatsLine
 std::atomic<uint64_t> g_calls{ 0 }, g_painted{ 0 }, g_no_rt{ 0 }, g_filtered{ 0 }, g_no_texture{ 0 }, g_bad_format{ 0 },
     g_faults{ 0 };
-std::atomic<uint64_t> g_l2d_failed{ 0 };
+std::atomic<uint64_t> g_l2d_failed{ 0 }, g_unregistered{ 0 };
 std::atomic<uint64_t> g_engine_renders{ 0 };  // calls in which the engine itself had the portrait flagged for re-rendering
 std::atomic<uint64_t> g_fill_ticks{ 0 }, g_upload_ticks{ 0 };  // QueryPerformanceCounter ticks spent filling / uploading
 std::atomic<int> g_painting{ 0 };  // paints in progress; the restore waits for it to reach 0
@@ -158,6 +158,28 @@ void FillPattern(uint32_t w, uint32_t h, bool bgra, uint32_t seed, uint32_t fram
     }
 }
 
+// The key of the portrait the engine shows in this object (`human_female_01`), copied into `out`; empty when unreadable.
+// An engine CString keeps up to 15 characters inline, longer ones behind a pointer.
+void ReadPortraitKey(const uint8_t* portrait, char* out, size_t cap) {
+    out[0] = 0;
+    __try {
+        const uint8_t* str = portrait + sdk::rt::CPortraitObject_key;
+        const uint64_t capacity = *(const uint64_t*)(str + sdk::cstring::kCapacity);
+        const uint64_t length = *(const uint64_t*)(str + sdk::cstring::kLength);
+        const char* data = capacity >= sdk::cstring::kInlineCapacity ? *(const char* const*)(str + sdk::cstring::kInline)
+                                                                     : (const char*)(str + sdk::cstring::kInline);
+        if (!data || length == 0 || length >= cap || length > 256) return;
+        for (uint64_t i = 0; i < length; ++i) {
+            const char c = data[i];
+            if (c < 0x20 || c > 0x7E) { out[0] = 0; return; }  // not a portrait key: do not trust it
+            out[i] = c;
+        }
+        out[length] = 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        out[0] = 0;
+    }
+}
+
 // One portrait: after the engine rendered it, overwrite its render target.
 void PaintPortrait(void* portrait) {
     const auto* base = (const uint8_t*)portrait;
@@ -189,7 +211,13 @@ void PaintPortrait(void* portrait) {
         return;
     }
     if (g_mode.load() == 2) {
-        if (Painter().Paint(portrait, tex, desc)) ++g_painted; else ++g_l2d_failed;
+        char key[96];
+        ReadPortraitKey(base, key, sizeof key);
+        switch (Painter().Paint(portrait, key, tex, desc)) {
+        case PaintResult::Painted: ++g_painted; break;
+        case PaintResult::Skipped: ++g_unregistered; break;
+        default: ++g_l2d_failed; break;
+        }
         return;
     }
     static uint32_t frame = 0;
@@ -303,11 +331,11 @@ void Uninstall() {
     Painter().Shutdown();
 }
 
-void Apply(const Settings& s) {
+void Apply(const Settings& s, const Registry& registry) {
     g_only_w = s.only_width;
     g_only_h = s.only_height;
     if (!g_installed) return;
-    Painter().Configure(s);  // loads or unloads the model on this (the worker) thread
+    Painter().Configure(s, registry);  // loads or unloads the models on this (the worker) thread
     const int want = (s.live2d && Painter().Ready()) ? 2 : s.test_pattern ? 1 : 0;
     if (want) g_mode = want;
     else StopPainting();
@@ -321,12 +349,13 @@ std::string StatsLine() {
     char buf[600];
     snprintf(buf, sizeof buf,
              "mode=%d | UpdatePortrait calls %llu (engine re-rendered %llu), painted %llu (avg fill %.0f us, upload %.0f us), "
-             "no render target %llu, size-filtered %llu, no texture %llu, bad format %llu, faults %llu, live2d failed %llu | texture offset %d",
+             "no render target %llu, size-filtered %llu, no texture %llu, bad format %llu, faults %llu, live2d failed %llu, unregistered %llu | texture offset %d",
              g_mode.load(), (unsigned long long)g_calls.load(), (unsigned long long)g_engine_renders.load(),
              (unsigned long long)g_painted.load(),
              painted ? g_fill_ticks.load() * us / painted : 0.0, painted ? g_upload_ticks.load() * us / painted : 0.0,
              (unsigned long long)g_no_rt.load(), (unsigned long long)g_filtered.load(), (unsigned long long)g_no_texture.load(),
              (unsigned long long)g_bad_format.load(), (unsigned long long)g_faults.load(), (unsigned long long)g_l2d_failed.load(),
+             (unsigned long long)g_unregistered.load(),
              g_tex_off.load());
     std::string line = buf;
     if (g_mode.load() == 2) line += " | " + Painter().Stats();

@@ -1,7 +1,10 @@
 #include "live2d_model.hpp"
 
+#include "dds.hpp"
+
 #include <malloc.h>
 #include <algorithm>
+#include <cstring>
 #include <fstream>
 #include <nlohmann/json.hpp>
 
@@ -14,37 +17,6 @@ namespace l2d {
 
 namespace fs = std::filesystem;
 
-static void BuildMips(Image* img) {
-    int levels = 1;
-    for (int s = std::max(img->width, img->height); s > 1; s >>= 1) ++levels;
-    img->mips.assign(levels, {});
-    img->mip_width.assign(levels, 0);
-    img->mip_height.assign(levels, 0);
-    img->mips[0] = img->rgba;
-    img->mip_width[0] = img->width;
-    img->mip_height[0] = img->height;
-    for (int l = 1; l < levels; ++l) {
-        const int pw = img->mip_width[l - 1], ph = img->mip_height[l - 1];
-        const int w = std::max(1, pw / 2), h = std::max(1, ph / 2);
-        img->mip_width[l] = w;
-        img->mip_height[l] = h;
-        const std::vector<uint8_t>& p = img->mips[l - 1];
-        std::vector<uint8_t>& o = img->mips[l];
-        o.resize((size_t)w * h * 4);
-        for (int y = 0; y < h; ++y) {
-            const int y0 = std::min(y * 2, ph - 1), y1 = std::min(y * 2 + 1, ph - 1);
-            for (int x = 0; x < w; ++x) {
-                const int x0 = std::min(x * 2, pw - 1), x1 = std::min(x * 2 + 1, pw - 1);
-                for (int c = 0; c < 4; ++c) {
-                    const int sum = p[((size_t)y0 * pw + x0) * 4 + c] + p[((size_t)y0 * pw + x1) * 4 + c] +
-                                    p[((size_t)y1 * pw + x0) * 4 + c] + p[((size_t)y1 * pw + x1) * 4 + c];
-                    o[((size_t)y * w + x) * 4 + c] = (uint8_t)((sum + 2) / 4);
-                }
-            }
-        }
-    }
-}
-
 bool LoadImageFile(const fs::path& path, Image* out, std::string* error) {
     std::ifstream f(path, std::ios::binary);
     if (!f) {
@@ -52,17 +24,25 @@ bool LoadImageFile(const fs::path& path, Image* out, std::string* error) {
         return false;
     }
     std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    if (bytes.size() >= 4 && std::memcmp(bytes.data(), "DDS ", 4) == 0) {
+        std::string e;
+        if (!ParseDds(bytes.data(), bytes.size(), out, &e)) {
+            if (error) *error = path.string() + ": " + e;
+            return false;
+        }
+        return true;
+    }
     int w = 0, h = 0, n = 0;
     uint8_t* px = stbi_load_from_memory(bytes.data(), (int)bytes.size(), &w, &h, &n, 4);
     if (!px) {
-        if (error) *error = "cannot decode " + path.string() + " (PNG and JPEG are supported): " + stbi_failure_reason();
+        if (error) *error = "cannot decode " + path.string() + " (DDS, PNG and JPEG are supported): " + stbi_failure_reason();
         return false;
     }
     out->width = w;
     out->height = h;
-    out->rgba.assign(px, px + (size_t)w * h * 4);
+    std::vector<uint8_t> rgba(px, px + (size_t)w * h * 4);
     stbi_image_free(px);
-    BuildMips(out);
+    BuildMipChain(out, std::move(rgba));
     return true;
 }
 

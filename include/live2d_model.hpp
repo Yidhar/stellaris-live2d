@@ -1,5 +1,5 @@
 #pragma once
-// One Live2D model in memory: the moc3 revived through the Cubism Core, its textures decoded to RGBA, and the file
+// One Live2D model in memory: the moc3 revived through the Cubism Core, its textures (PNG, JPEG or DDS), and the file
 // references of its model3.json (motions, physics). Rendering and playback live elsewhere.
 #include "cubism_core.hpp"
 
@@ -11,14 +11,25 @@
 
 namespace l2d {
 
+enum class PixelFormat { RGBA8, BC1, BC2, BC3 };
+
+// A texture as it is uploaded: straight (not premultiplied) alpha, every mip level already in its final form so that the
+// render thread never has to build or convert anything. RGBA8 levels are rows of 4-byte pixels; the BC levels are 4x4 blocks
+// (8 bytes for BC1, 16 for BC2 and BC3, the DXT1, DXT3 and DXT5 of .dds files).
 struct Image {
     int width = 0, height = 0;
-    std::vector<uint8_t> rgba;  // straight alpha, 4 bytes per pixel
-    // The mip chain, level 0 being `rgba` itself and every further level half the size (2x2 box filter). Built when the
-    // image is loaded, so that the render thread never has to.
-    std::vector<std::vector<uint8_t>> mips;
+    PixelFormat format = PixelFormat::RGBA8;
+    std::vector<std::vector<uint8_t>> mips;  // level 0 first, each level half the size of the one before
     std::vector<int> mip_width, mip_height;
+
+    // bytes in one row of `level` (RGBA8) or in one row of blocks (BC formats)
+    size_t Pitch(int level) const;
+    size_t Bytes() const;
 };
+
+// Level 0 of `img` from `rgba` (width * height pixels, straight alpha) and the rest of the chain below it: a 2x2 box filter
+// that weighs colours by alpha, so transparent pixels do not darken the edges of the picture.
+void BuildMipChain(Image* img, std::vector<uint8_t> rgba);
 
 struct MotionRef {
     std::filesystem::path file;

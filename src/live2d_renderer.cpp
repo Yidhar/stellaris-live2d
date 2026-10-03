@@ -165,17 +165,22 @@ Renderer::GpuPtr Renderer::CreateModel(const Model& model, std::string* error) {
     GpuPtr gpu(new Gpu);
     const core::Api& api = model.api();
 
-    // textures: the mip chains were built when the images were loaded, so this is only an upload
+    // textures: the mip chains were built (or read from the DDS file) when the images were loaded, so this is only an upload
     for (const Image& img : model.textures) {
         const int levels = (int)img.mips.size();
         std::vector<D3D11_SUBRESOURCE_DATA> data(levels);
         for (int l = 0; l < levels; ++l) {
             data[l].pSysMem = img.mips[l].data();
-            data[l].SysMemPitch = (UINT)img.mip_width[l] * 4;
+            data[l].SysMemPitch = (UINT)img.Pitch(l);
         }
         D3D11_TEXTURE2D_DESC td = {};
         td.Width = img.width; td.Height = img.height; td.MipLevels = levels; td.ArraySize = 1;
-        td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        switch (img.format) {
+        case PixelFormat::BC1: td.Format = DXGI_FORMAT_BC1_UNORM; break;
+        case PixelFormat::BC2: td.Format = DXGI_FORMAT_BC2_UNORM; break;
+        case PixelFormat::BC3: td.Format = DXGI_FORMAT_BC3_UNORM; break;
+        default: td.Format = DXGI_FORMAT_R8G8B8A8_UNORM; break;
+        }
         td.SampleDesc.Count = 1;
         td.Usage = D3D11_USAGE_IMMUTABLE;
         td.BindFlags = D3D11_BIND_SHADER_RESOURCE;

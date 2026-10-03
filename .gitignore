@@ -16,6 +16,7 @@ __pycache__/
 # local research, models and renders (third-party art never goes into the repo)
 scratch/
 models/
+models_dxt5/
 captures/
 
 # IDE

@@ -6,6 +6,7 @@
 // Signal the event Local\stellaris_live2d_unload_<pid> instead (scripts/l2dctl.py): the worker removes the hook, waits
 // for in-flight calls to drain and unloads the DLL itself.
 #include "live2d.hpp"
+#include "portrait_registry.hpp"
 
 #include <windows.h>
 #include <cstdio>
@@ -50,7 +51,9 @@ void WriteDefaultIni(const std::string& path) {
               "; how many times a second the model is advanced and redrawn\n"
               "fps=30\n"
               "; secondary motion (hair, clothes) from the model's physics3.json\n"
-              "physics=1\n", f);
+              "physics=1\n"
+              "; mod root folders read as if they were enabled (development): the portrait registrations in them are used\n"
+              "extra_mod_dirs=\n", f);
         fclose(f);
     }
 }
@@ -107,6 +110,16 @@ l2d::Settings ReadIni(const std::string& path) {
         }
         s.models.push_back(e);
     }
+    const std::string dirs = IniString("extra_mod_dirs", path);
+    for (size_t pos = 0; pos < dirs.size();) {
+        size_t end = dirs.find(';', pos);
+        if (end == std::string::npos) end = dirs.size();
+        std::string item = dirs.substr(pos, end - pos);
+        pos = end + 1;
+        while (!item.empty() && (item.back() == ' ' || item.back() == '\t')) item.pop_back();
+        while (!item.empty() && (item.front() == ' ' || item.front() == '\t')) item.erase(item.begin());
+        if (!item.empty()) s.extra_mod_dirs.push_back(item);
+    }
     s.fps = GetPrivateProfileIntA("live2d", "fps", 30, path.c_str());
     s.physics = GetPrivateProfileIntA("live2d", "physics", 1, path.c_str()) != 0;
     s.test_pattern = GetPrivateProfileIntA("live2d", "test_pattern", 0, path.c_str()) != 0;
@@ -133,13 +146,25 @@ DWORD WINAPI Worker(LPVOID) {
     const std::string ini = IniPath();
     WriteDefaultIni(ini);
     l2d::Settings last;
+    l2d::Registry registry;
+    uint64_t registry_signature = 0;
     bool first = true;
     int ticks = 0;
     for (;;) {
         const l2d::Settings s = ReadIni(ini);
-        const bool changed = first || !(s == last);
+        // the mods' portrait registrations: scanned again when the playset or one of the scanned files changed
+        bool registry_changed = false;
+        const uint64_t signature = l2d::ScanRegistry(s.extra_mod_dirs, false).signature;
+        if (first || signature != registry_signature) {
+            registry = l2d::ScanRegistry(s.extra_mod_dirs, true);
+            registry_signature = signature;
+            registry_changed = true;
+            for (const std::string& m : registry.messages) l2d::Log("registry: %s", m.c_str());
+            l2d::Log("registry: %zu portrait key(s) registered by the enabled mods", registry.entries.size());
+        }
+        const bool changed = first || registry_changed || !(s == last);
         if (changed) {
-            l2d::Apply(s);
+            l2d::Apply(s, registry);
             l2d::Log("settings: test_pattern=%d only_size=%dx%d live2d=%d models=%zu fps=%d physics=%d", (int)s.test_pattern,
                      s.only_width, s.only_height, (int)s.live2d, s.models.size(), s.fps, (int)s.physics);
             last = s;

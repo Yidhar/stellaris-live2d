@@ -10,6 +10,9 @@ What it finds (all for CPortraitObject, the engine's portrait):
   * from that same code: where the object keeps its render-target width, height, texture pointer and "needs render" flag
   * CPortraitObjectController::UpdatePortraits, the only direct caller of UpdatePortrait, and from its loop the global
     array of every portrait object the engine has (data pointer and count)
+  * which portrait an object is: every frame UpdatePortrait looks the object's string member (the key of the `portraits = {}`
+    entry the engine resolved for it, e.g. "human_male_01") up in the portrait database table, with
+    `lea r8, [this + KEY]` / `lea rcx, [database + TABLE]` / `call Find`
 """
 import re
 import struct
@@ -92,6 +95,22 @@ def main():
     if dirty is None:
         fail("could not find the portrait's `needs render` flag")
 
+    # The portrait key: the two sites that look it up in the database table agree on (KEY, TABLE) and the same Find function
+    sites = set()
+    for k in range(4, len(ins)):
+        if ins[k].mnemonic != "call" or not ins[k].op_str.startswith("0x"):
+            continue
+        leas = {x.op_str.split(",")[0].strip(): x for x in ins[k - 4:k] if x.mnemonic == "lea"}
+        if all(r in leas for r in ("r8", "rdx", "rcx")):
+            key_off, table_off = mem_disp(leas["r8"].op_str), mem_disp(leas["rcx"].op_str)
+            if key_off and table_off and key_off > rt and table_off > 0x100:
+                sites.add((ins[k].op_str, key_off, table_off))
+    if len({(k, t) for _, k, t in sites}) != 1 or len({f for f, _, _ in sites}) != 1:
+        fail(f"could not find the portrait key lookup in UpdatePortrait: {sorted(sites)}")
+    _, key, table = next(iter(sites))
+    if not any(x.mnemonic == "lea" and x.op_str == f"rcx, [{this_reg} + {key:#x}]" for x in ins):
+        fail(f"the key at +{key:#x} is not addressed through `this` ({this_reg})")
+
     # The controller: the one place that calls UpdatePortrait, once per visible portrait out of a global array
     text = im.img[im.text0:im.text1]
     callers = []
@@ -127,6 +146,7 @@ def main():
     print(f"CPortraitObject height            +{height:#x} (uint16)")
     print(f"CPortraitObject render target     +{rt:#x} (TextureGFX*)")
     print(f"CPortraitObject needs-render flag +{dirty:#x} (uint8)")
+    print(f"CPortraitObject key (CString)     +{key:#x}  (database table at +{table:#x})")
     print(f"UpdatePortraits (controller)      rva {ctrl:#x}")
     print(f"portrait array                    data pointer rva {data:#x}, count rva {count:#x}")
 
@@ -157,7 +177,18 @@ namespace rt {{
     inline constexpr std::ptrdiff_t CPortraitObject_height = {height:#x};        // uint16_t, render target height
     inline constexpr std::ptrdiff_t CPortraitObject_needs_render = {dirty:#x};  // uint8_t, the portrait is re-rendered while set
     inline constexpr std::ptrdiff_t CPortraitObject_render_target = {rt:#x};  // TextureGFX*, null until first rendered
+    // engine CString: the key of the `portraits = {{}}` entry this object shows (empty or "debug" until a setter ran)
+    inline constexpr std::ptrdiff_t CPortraitObject_key = {key:#x};
 }}  // namespace rt
+
+// Layout of the engine's CString, read from the constructor of CPortraitObject (it initialises the key at +{key:#x} to "debug"):
+// 0x30 bytes, characters inline in the first 16 bytes after +0x10 while the capacity (+0x28) is below 16, else a pointer there.
+namespace cstring {{
+    inline constexpr std::ptrdiff_t kInline = 0x10;
+    inline constexpr std::ptrdiff_t kLength = 0x20;
+    inline constexpr std::ptrdiff_t kCapacity = 0x28;
+    inline constexpr size_t kInlineCapacity = 16;
+}}  // namespace cstring
 }}  // namespace sdk
 """, encoding="utf-8", newline="\n")
     print("wrote", out)

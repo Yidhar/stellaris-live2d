@@ -26,7 +26,7 @@ Stellaris 的肖像是骨骼动画的 2D 人物，渲染到一张渲染目标纹
 你需要一个 Cubism Core 库和一个模型，这两样都不包含在仓库里。
 
 1. **Cubism Core。** 可以是 Live2D 官方的 `Live2DCubismCore.dll`（来自 live2d.com 的 Cubism SDK for Native，遵守 Live2D 的条款），也可以是兼容的替代品，例如 [Purism Core](https://github.com/SakuraMotion/PurismCore)（MIT）。插件使用 v5 版的 API（`csmGetDrawableRenderOrders` 和颜色相关的函数）；只有新版 API 的库暂不支持。
-2. **模型**：一个文件夹，里面有 `model3.json`、`moc3`、PNG 或 JPEG 贴图，可选的 `physics3.json` 和动作。模型有它们作者的许可证。
+2. **模型**：一个文件夹，里面有 `model3.json`、`moc3`、贴图（PNG、JPEG，或 DXT1/DXT3/DXT5 的 DDS，即游戏自己贴图的格式：显存占用是 RGBA8 的四分之一，mip 链存在文件里），可选的 `physics3.json` 和动作。`l2d_pack` 可以把模型的 PNG 贴图转成 DXT5。模型有它们作者的许可证。
 3. 编译插件（见下），启动游戏，运行 `python scripts\l2dctl.py load`（还有 `unload`、`reload`、`status`）。注入只在这一次游戏运行中有效。
 4. 编辑 `stellaris.exe` 旁边的 `stellaris_live2d.ini`（首次运行时创建，每 2 秒重新读取），打开有肖像的界面（议会、领袖列表）；没有显示的话看 `stellaris_live2d.log`。
 
@@ -41,6 +41,10 @@ Stellaris 的肖像是骨骼动画的 2D 人物，渲染到一张渲染目标纹
 | `fps` | `30` | 模型每秒推进和重绘多少次 |
 | `physics` | `1` | 来自模型 `physics3.json` 的次级运动 |
 | `test_pattern` | `0` | 改为画测试图案（用来检查钩子是否工作） |
+
+### 肖像组 mod
+
+推荐的用法是做一个 mod：mod 带着模型，并声明它们替换哪些肖像。mod 用游戏自己注册肖像的脚本语法写出要交给插件绘制的肖像键，再加几个额外的键（`live2d = yes`、`spine = yes`、`live2d_model`、`live2d_view`，以及描述鼠标跟随、点击、拖拽、缩放的 `live2d_actions`）。插件从已启用 mod 的 `gfx/portraits/live2d/*.txt`（引擎不读的目录）或 `gfx/portraits/portraits/*.txt` 读取，把每个模型绑定到引擎报告的肖像键上。没有插件的游戏照常画原来的肖像。详见 [docs/portrait-mod-design.md](docs/portrait-mod-design.md)。`python scripts\make_human_mod.py --enable` 会用 `models_dxt5\` 里的模型生成一个替换人类肖像的测试 mod；`python scripts\load_save.py <存档> --folder <目录>` 让游戏读入存档并注入插件。交互目前只解析，尚未实现。
 
 ### 离屏查看器
 
@@ -79,9 +83,9 @@ DLL 只适用于它的 SDK 所定位的那个 `stellaris.exe`（加载时检查�
 
 1. **已完成：** 钩子、纹理写入、恢复、卸载。
 2. **已完成：** Core 加载、模型、动作、物理、渲染器、画进游戏。
-3. **已完成：** 同时多个模型，每个肖像一个，按顺序分配。
-4. 肖像组 mod：mod 照常注册自己的肖像，再用一个额外文件声明其中哪些是 Live2D（或 Spine）模型、以及它们如何响应（鼠标跟随、点击、拖拽、缩放）；DLL 提供运行时。见 `docs/portrait-mod-design.md`。
-5. 按界面裁剪，状态变体（例如受伤）。
+3. **已完成：** 同时多个模型、DXT5 贴图、按肖像键绑定模型的肖像组 mod。
+4. mod 可声明的交互（鼠标跟随、点击、拖拽、缩放）、Spine、按领袖或按界面绑定。
+5. 状态变体（例如受伤）。
 6. 由 CI 发布构建。
 
 ## 授权

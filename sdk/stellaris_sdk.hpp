@@ -23,5 +23,16 @@ namespace rt {
     inline constexpr std::ptrdiff_t CPortraitObject_height = 0x52a;        // uint16_t, render target height
     inline constexpr std::ptrdiff_t CPortraitObject_needs_render = 0x52c;  // uint8_t, the portrait is re-rendered while set
     inline constexpr std::ptrdiff_t CPortraitObject_render_target = 0x530;  // TextureGFX*, null until first rendered
+    // engine CString: the key of the `portraits = {}` entry this object shows (empty or "debug" until a setter ran)
+    inline constexpr std::ptrdiff_t CPortraitObject_key = 0x818;
 }  // namespace rt
+
+// Layout of the engine's CString, read from the constructor of CPortraitObject (it initialises the key at +0x818 to "debug"):
+// 0x30 bytes, characters inline in the first 16 bytes after +0x10 while the capacity (+0x28) is below 16, else a pointer there.
+namespace cstring {
+    inline constexpr std::ptrdiff_t kInline = 0x10;
+    inline constexpr std::ptrdiff_t kLength = 0x20;
+    inline constexpr std::ptrdiff_t kCapacity = 0x28;
+    inline constexpr size_t kInlineCapacity = 16;
+}  // namespace cstring
 }  // namespace sdk
