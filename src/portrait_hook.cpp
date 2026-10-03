@@ -7,6 +7,7 @@
 // scanned for a COM object that is a D3D11 texture of exactly the portrait's size, bound as a render target; the offset
 // that matched is remembered and re-validated on every use.
 #include "live2d.hpp"
+#include "portrait_live2d.hpp"
 #include "stellaris_sdk.hpp"
 #include "MinHook.h"
 
@@ -58,12 +59,14 @@ bool g_installed = false;
 FnUpdatePortrait g_orig_update = nullptr;
 std::atomic<int> g_in_hook{ 0 };  // detours currently running, drained on unload
 
-std::atomic<bool> g_test{ false };
+// what the hook paints after the engine rendered a portrait: 0 nothing, 1 the test pattern, 2 the Live2D model
+std::atomic<int> g_mode{ 0 };
 std::atomic<int> g_only_w{ 0 }, g_only_h{ 0 };
 
 // counters, read by StatsLine
 std::atomic<uint64_t> g_calls{ 0 }, g_painted{ 0 }, g_no_rt{ 0 }, g_filtered{ 0 }, g_no_texture{ 0 }, g_bad_format{ 0 },
     g_faults{ 0 };
+std::atomic<uint64_t> g_l2d_failed{ 0 };
 std::atomic<uint64_t> g_engine_renders{ 0 };  // calls in which the engine itself had the portrait flagged for re-rendering
 std::atomic<uint64_t> g_fill_ticks{ 0 }, g_upload_ticks{ 0 };  // QueryPerformanceCounter ticks spent filling / uploading
 std::atomic<int> g_painting{ 0 };  // paints in progress; the restore waits for it to reach 0
@@ -185,6 +188,10 @@ void PaintPortrait(void* portrait) {
         if (++g_bad_format == 1) Log("render target format %d / %u samples is not supported by the test pattern", (int)desc.Format, desc.SampleDesc.Count);
         return;
     }
+    if (g_mode.load() == 2) {
+        if (Painter().Paint(tex, desc)) ++g_painted; else ++g_l2d_failed;
+        return;
+    }
     static uint32_t frame = 0;
     const uint64_t t0 = Ticks();
     FillPattern(w, h, bgra, (uint32_t)((uintptr_t)portrait >> 4), ++frame);
@@ -228,9 +235,9 @@ void MarkAllPortraitsDirty() {
 }
 
 // Stops painting and puts the game's own pictures back. A paint begins by counting itself in and only then looks at
-// g_test, so once g_painting has dropped to 0 after g_test went false, no paint is running or can start.
+// g_mode, so once g_painting has dropped to 0 after g_mode went 0, no paint is running or can start.
 void StopPainting() {
-    const bool was_on = g_test.exchange(false);
+    const bool was_on = g_mode.exchange(0) != 0;
     for (int i = 0; i < 500 && g_painting.load() != 0; ++i) Sleep(2);
     if (was_on) {
         MarkAllPortraitsDirty();
@@ -245,7 +252,7 @@ void UpdatePortraitDetour(void* portrait, void* graphics, void* context) {
     g_orig_update(portrait, graphics, context);
     ++g_calls;
     g_painting.fetch_add(1);
-    if (g_test.load()) PaintGuarded(portrait);
+    if (g_mode.load()) PaintGuarded(portrait);
     g_painting.fetch_sub(1);
     g_in_hook.fetch_sub(1);
 }
@@ -284,7 +291,7 @@ bool Install(uintptr_t base) {
 }
 
 void Uninstall() {
-    if (!g_installed) { g_test = false; return; }
+    if (!g_installed) { g_mode = 0; Painter().Shutdown(); return; }
     StopPainting();
     Sleep(300);  // a few frames for the engine to re-render the portraits it was flagged to
     MH_DisableHook(MH_ALL_HOOKS);
@@ -293,13 +300,16 @@ void Uninstall() {
     Sleep(300);
     MH_Uninitialize();
     g_installed = false;
+    Painter().Shutdown();
 }
 
 void Apply(const Settings& s) {
     g_only_w = s.only_width;
     g_only_h = s.only_height;
     if (!g_installed) return;
-    if (s.test_pattern) g_test = true;
+    Painter().Configure(s);  // loads or unloads the model on this (the worker) thread
+    const int want = (s.live2d && Painter().Ready()) ? 2 : s.test_pattern ? 1 : 0;
+    if (want) g_mode = want;
     else StopPainting();
 }
 
@@ -308,16 +318,19 @@ std::string StatsLine() {
     QueryPerformanceFrequency(&f);
     const double painted = (double)g_painted.load();
     const double us = 1e6 / (double)f.QuadPart;
-    char buf[400];
+    char buf[600];
     snprintf(buf, sizeof buf,
-             "test_pattern=%d | UpdatePortrait calls %llu (engine re-rendered %llu), painted %llu (avg fill %.0f us, upload %.0f us), "
-             "no render target %llu, size-filtered %llu, no texture %llu, bad format %llu, faults %llu | texture offset %d",
-             (int)g_test.load(), (unsigned long long)g_calls.load(), (unsigned long long)g_engine_renders.load(),
+             "mode=%d | UpdatePortrait calls %llu (engine re-rendered %llu), painted %llu (avg fill %.0f us, upload %.0f us), "
+             "no render target %llu, size-filtered %llu, no texture %llu, bad format %llu, faults %llu, live2d failed %llu | texture offset %d",
+             g_mode.load(), (unsigned long long)g_calls.load(), (unsigned long long)g_engine_renders.load(),
              (unsigned long long)g_painted.load(),
              painted ? g_fill_ticks.load() * us / painted : 0.0, painted ? g_upload_ticks.load() * us / painted : 0.0,
              (unsigned long long)g_no_rt.load(), (unsigned long long)g_filtered.load(), (unsigned long long)g_no_texture.load(),
-             (unsigned long long)g_bad_format.load(), (unsigned long long)g_faults.load(), g_tex_off.load());
-    return buf;
+             (unsigned long long)g_bad_format.load(), (unsigned long long)g_faults.load(), (unsigned long long)g_l2d_failed.load(),
+             g_tex_off.load());
+    std::string line = buf;
+    if (g_mode.load() == 2) line += " | " + Painter().Stats();
+    return line;
 }
 
 } // namespace l2d

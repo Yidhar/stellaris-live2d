@@ -1,0 +1,173 @@
+#include "live2d_model.hpp"
+
+#include <malloc.h>
+#include <algorithm>
+#include <fstream>
+#include <nlohmann/json.hpp>
+
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#define STBI_ONLY_JPEG
+#include "stb_image.h"
+
+namespace l2d {
+
+namespace fs = std::filesystem;
+
+static void BuildMips(Image* img) {
+    int levels = 1;
+    for (int s = std::max(img->width, img->height); s > 1; s >>= 1) ++levels;
+    img->mips.assign(levels, {});
+    img->mip_width.assign(levels, 0);
+    img->mip_height.assign(levels, 0);
+    img->mips[0] = img->rgba;
+    img->mip_width[0] = img->width;
+    img->mip_height[0] = img->height;
+    for (int l = 1; l < levels; ++l) {
+        const int pw = img->mip_width[l - 1], ph = img->mip_height[l - 1];
+        const int w = std::max(1, pw / 2), h = std::max(1, ph / 2);
+        img->mip_width[l] = w;
+        img->mip_height[l] = h;
+        const std::vector<uint8_t>& p = img->mips[l - 1];
+        std::vector<uint8_t>& o = img->mips[l];
+        o.resize((size_t)w * h * 4);
+        for (int y = 0; y < h; ++y) {
+            const int y0 = std::min(y * 2, ph - 1), y1 = std::min(y * 2 + 1, ph - 1);
+            for (int x = 0; x < w; ++x) {
+                const int x0 = std::min(x * 2, pw - 1), x1 = std::min(x * 2 + 1, pw - 1);
+                for (int c = 0; c < 4; ++c) {
+                    const int sum = p[((size_t)y0 * pw + x0) * 4 + c] + p[((size_t)y0 * pw + x1) * 4 + c] +
+                                    p[((size_t)y1 * pw + x0) * 4 + c] + p[((size_t)y1 * pw + x1) * 4 + c];
+                    o[((size_t)y * w + x) * 4 + c] = (uint8_t)((sum + 2) / 4);
+                }
+            }
+        }
+    }
+}
+
+bool LoadImageFile(const fs::path& path, Image* out, std::string* error) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) {
+        if (error) *error = "cannot open " + path.string();
+        return false;
+    }
+    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    int w = 0, h = 0, n = 0;
+    uint8_t* px = stbi_load_from_memory(bytes.data(), (int)bytes.size(), &w, &h, &n, 4);
+    if (!px) {
+        if (error) *error = "cannot decode " + path.string() + " (PNG and JPEG are supported): " + stbi_failure_reason();
+        return false;
+    }
+    out->width = w;
+    out->height = h;
+    out->rgba.assign(px, px + (size_t)w * h * 4);
+    stbi_image_free(px);
+    BuildMips(out);
+    return true;
+}
+
+Model::~Model() {
+    if (moc_memory_) _aligned_free(moc_memory_);
+    if (model_memory_) _aligned_free(model_memory_);
+}
+
+bool Model::Load(const core::Api* api, const fs::path& model3_json, std::string* error) {
+    api_ = api;
+    auto fail = [&](const std::string& m) {
+        if (error) *error = m;
+        return false;
+    };
+    std::ifstream jf(model3_json);
+    if (!jf) return fail("cannot open " + model3_json.string());
+    nlohmann::json j;
+    try {
+        j = nlohmann::json::parse(jf);
+    } catch (const std::exception& e) {
+        return fail(std::string("bad model3.json: ") + e.what());
+    }
+    directory = model3_json.parent_path();
+    const auto& refs = j.value("FileReferences", nlohmann::json::object());
+    if (!refs.contains("Moc")) return fail("model3.json has no Moc");
+
+    // the moc3: 64-byte aligned memory, revived in place
+    {
+        std::ifstream mf(directory / fs::u8path(refs["Moc"].get<std::string>()), std::ios::binary | std::ios::ate);
+        if (!mf) return fail("cannot open the moc3 file");
+        const size_t size = (size_t)mf.tellg();
+        mf.seekg(0);
+        moc_memory_ = _aligned_malloc(size, 64);
+        if (!moc_memory_ || !mf.read((char*)moc_memory_, (std::streamsize)size)) return fail("cannot read the moc3 file");
+        if (api_->HasMocConsistency && !api_->HasMocConsistency(moc_memory_, (unsigned)size)) return fail("the moc3 file failed the consistency check");
+        moc_ = api_->ReviveMocInPlace(moc_memory_, (unsigned)size);
+        if (!moc_) return fail("the Cubism Core could not load the moc3 file (version " + std::to_string(api_->GetMocVersion(moc_memory_, (unsigned)size)) + ")");
+        const unsigned msz = api_->GetSizeofModel(moc_);
+        model_memory_ = _aligned_malloc(msz, 16);
+        model_ = model_memory_ ? api_->InitializeModelInPlace(moc_, model_memory_, msz) : nullptr;
+        if (!model_) return fail("the Cubism Core could not create the model");
+    }
+
+    api_->ReadCanvasInfo(model_, &canvas_size, &canvas_origin, &pixels_per_unit);
+
+    parameter_count = api_->GetParameterCount(model_);
+    parameter_values = api_->GetParameterValues(model_);
+    parameter_min = api_->GetParameterMinimumValues(model_);
+    parameter_max = api_->GetParameterMaximumValues(model_);
+    parameter_default = api_->GetParameterDefaultValues(model_);
+    const char** pids = api_->GetParameterIds(model_);
+    for (int i = 0; i < parameter_count; ++i) {
+        parameter_ids.push_back(pids[i]);
+        parameter_index[pids[i]] = i;
+    }
+    part_count = api_->GetPartCount(model_);
+    part_opacities = api_->GetPartOpacities(model_);
+    const char** qids = api_->GetPartIds(model_);
+    for (int i = 0; i < part_count; ++i) {
+        part_ids.push_back(qids[i]);
+        part_index[qids[i]] = i;
+    }
+    drawable_count = api_->GetDrawableCount(model_);
+    saved_parameters_.assign(parameter_values, parameter_values + parameter_count);
+
+    if (refs.contains("Textures")) {
+        for (const auto& t : refs["Textures"]) {
+            Image img;
+            std::string e;
+            if (!LoadImageFile(directory / fs::u8path(t.get<std::string>()), &img, &e)) return fail(e);
+            textures.push_back(std::move(img));
+        }
+    }
+    if (refs.contains("Physics")) physics_file = directory / fs::u8path(refs["Physics"].get<std::string>());
+    if (refs.contains("Motions")) {
+        for (auto it = refs["Motions"].begin(); it != refs["Motions"].end(); ++it) {
+            for (const auto& m : it.value()) {
+                MotionRef r;
+                r.file = directory / fs::u8path(m.value("File", std::string()));
+                r.fade_in = m.value("FadeInTime", 1.0f);
+                r.fade_out = m.value("FadeOutTime", 1.0f);
+                motions[it.key()].push_back(std::move(r));
+            }
+        }
+    }
+    return true;
+}
+
+int Model::FindParameter(const std::string& id) const {
+    auto it = parameter_index.find(id);
+    return it == parameter_index.end() ? -1 : it->second;
+}
+
+int Model::FindPart(const std::string& id) const {
+    auto it = part_index.find(id);
+    return it == part_index.end() ? -1 : it->second;
+}
+
+void Model::SaveParameters() { saved_parameters_.assign(parameter_values, parameter_values + parameter_count); }
+
+void Model::LoadParameters() { std::copy(saved_parameters_.begin(), saved_parameters_.end(), parameter_values); }
+
+void Model::Update() {
+    api_->ResetDrawableDynamicFlags(model_);
+    api_->UpdateModel(model_);
+}
+
+} // namespace l2d
