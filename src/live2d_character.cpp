@@ -30,10 +30,15 @@ bool Character::PlayMotionFrom(const std::vector<std::string>& patterns, int ind
     }
     if (groups.empty()) return false;
     if (groups.size() > 1) groups.erase(std::remove(groups.begin(), groups.end(), last_group_), groups.end());
-    const std::string& group = groups[rng_() % groups.size()];
-    if (!PlayMotion(group, index)) return false;
-    last_group_ = group;
-    return true;
+    // in random order until one plays: a group whose motion file is missing or broken must not make the click do nothing
+    std::shuffle(groups.begin(), groups.end(), rng_);
+    for (const std::string& group : groups) {
+        if (PlayMotion(group, index)) {
+            last_group_ = group;
+            return true;
+        }
+    }
+    return false;
 }
 
 void Character::SetLookTarget(float x, float y, float weight) {
