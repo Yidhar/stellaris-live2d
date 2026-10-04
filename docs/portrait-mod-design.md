@@ -52,7 +52,7 @@ portraits = {
 			click      = { motion_group = "touch*" }                           # the left button went down on the picture
 			click_head = { motion_group = "touch*"  expression = "smile" }     # ... on a hit area of the model (click_<Name>)
 			hover      = { expression = "smile"  expression_hold = 1.5 }       # the pointer came onto the picture
-			appear     = { motion_group = "login" }                            # the portrait shows up
+			appear     = { motion_group = "wait*"  expression = "smile" }       # the portrait shows up
 			idle       = { motion_group = "wait*"  interval = { 15 30 } }      # now and then while it is shown
 			greeting   = { motion_group = "touch*"  replace_engine_sound = no }   # the game plays the portrait's greeting sound
 		}
@@ -98,7 +98,7 @@ name their groups differently (`touch_1`, `touch_01`, `Tap`...), so a group can 
 | `click` | the left button goes down on the portrait's picture: inside the rectangle the GUI draws it in and inside its clip area, the nearest centre where portraits overlap. Only mouse messages that land there are looked at; every message still reaches the game, so a button drawn over the portrait is pressed as well, and a window drawn over it does not stop the click from counting |
 | `click_<Name>` | the same, when the click is on the hit area `<Name>` of the model (`click_head`, `click_body`, `click_leg` for the test models; the comparison ignores case). Falls back to `click` when the model has no such area or the area has no action |
 | `hover` | the pointer comes onto the picture |
-| `appear` | the portrait shows up: the first time, or again after not being drawn for a while (a screen opened) |
+| `appear` | the portrait shows up: the first time, or again after not being drawn for a while (a screen opened). Pick a motion that keeps the background transparent: the `login` motion of many models is a stage entrance that fades in from a black backdrop (the test models' does, for about six seconds), which looks like a dark box in the middle of a screen |
 | `idle` | every `interval = { min max }` seconds (random in between) while the portrait is shown, not over a motion an event started |
 | `greeting` | the game plays the portrait's own greeting sound (`greeting_sound` of its `portraits` entry: the diplomacy window opening, an incoming proposal, a species being previewed). The plugin hooks the engine function that fetches that sound; with `replace_engine_sound = yes` the game's sound is not played, so the action's line takes its place |
 

@@ -106,7 +106,7 @@ def live2d_entry(key, model, sounds):
 \t\t\tclick = {{ motion_group = "touch*"{say} }}
 \t\t\tclick_head = {{ motion_group = "touch*" expression = "smile"{say} }}
 \t\t\thover = {{ expression = "smile"  expression_hold = 1.5 }}
-\t\t\tappear = {{ motion_group = "login" }}
+\t\t\tappear = {{ motion_group = "wait*"  expression = "smile"  expression_hold = 2 }}
 \t\t\tidle = {{ motion_group = "wait*"  interval = {{ 15 30 }} }}
 \t\t\tgreeting = {{ motion_group = "touch*"{say} }}
 \t\t}}
