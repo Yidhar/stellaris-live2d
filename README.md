@@ -83,7 +83,8 @@ plugin reads them from the enabled mods' `gfx/portraits/live2d/*.txt` (a folder 
 plugin keeps drawing the normal portraits. See [docs/portrait-mod-design.md](docs/portrait-mod-design.md).
 `python scripts\make_human_mod.py --enable` builds a test mod that replaces the human portraits with the models in
 `models_dxt5\`; `python scripts\load_save.py <save> --folder <folder>` restarts the game on a save and injects the plugin.
-The interactions are parsed but not implemented yet.
+`mouse_follow` works (head and eyes follow the pointer; `interactions=0` in the ini turns it off); `click`, `drag` and
+`scale` are parsed but not implemented yet.
 
 ### The offscreen viewer
 
@@ -129,7 +130,7 @@ mismatch and installs nothing). After a game patch: `pip install pefile capstone
 1. **Done:** hook, texture write, restore, unload.
 2. **Done:** Core loading, model, motions, physics, renderer, drawing into the game.
 3. **Done:** several models at once; DXT5 textures; portrait-group mods that bind models to portrait keys.
-4. The interactions a mod can declare (mouse follow, click, drag, zoom), Spine, binding per leader or per screen.
+4. **Done:** mouse follow. Next: click, drag, zoom, Spine, binding per leader or per screen.
 5. State variants (for example wounded).
 6. Release builds by CI.
 

@@ -57,15 +57,17 @@ portraits = {
 | `live2d`, `spine` | booleans: which runtime draws the portrait. Neither: the game draws it |
 | `live2d_model` | path of the `model3.json` relative to the mod root |
 | `live2d_view` | the part of the model canvas shown, as fractions of the canvas. `auto = yes` works it out from the model's geometry: it starts a little above the head and covers `body` (default `0.46`) of the figure's height. Otherwise `x`, `y` (centre from the left and from the top) and `height` |
-| `live2d_actions.mouse_follow` | the model looks towards the mouse pointer (`strength` 0..1) |
+| `live2d_actions.mouse_follow` | the model looks towards the mouse pointer (`strength` 0..1): head turn (`ParamAngleX/Y/Z`), a little body lean (`ParamBodyAngleX`) and the eyes (`ParamEyeBallX/Y`), the values Cubism's own samples drive for a drag, eased over about 0.15 s and added on top of the motion every frame. Back to the middle while the game is not the foreground window. The ini key `interactions=0` turns all interactions off |
 | `live2d_actions.click` | clicking the portrait starts a motion from `motion_group` (`motion_index` -1 = random) and/or an expression |
 | `live2d_actions.drag` | dragging on the portrait moves the model's look/body parameters |
 | `live2d_actions.scale` | the mouse wheel over the portrait zooms between `min` and `max` |
 
 **Status:** the registration, model loading and drawing work (checked in the game with a mod that replaces the human
-portraits). The `live2d_actions` block is parsed and kept; the interactions themselves are not implemented: they need the
-screen rectangle of each portrait, which the engine does not keep on the portrait object (the GUI sprite that shows the render
-target knows it), plus mouse input.
+portraits). `mouse_follow` works (checked in the game: the head and eyes of the large leader portrait follow the pointer to the
+four screen edges); until the screen rectangle of each portrait is known the target is the pointer's place relative to the
+middle of the game window, not relative to the portrait. `click`, `drag` and `scale` are parsed and kept but not implemented:
+they need the screen rectangle of each portrait, which the engine does not keep on the portrait object (the GUI sprite that
+shows the render target knows it), plus mouse input.
 
 ## Making a mod
 

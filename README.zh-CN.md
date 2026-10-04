@@ -44,7 +44,7 @@ Stellaris 的肖像是骨骼动画的 2D 人物，渲染到一张渲染目标纹
 
 ### 肖像组 mod
 
-推荐的用法是做一个 mod：mod 带着模型，并声明它们替换哪些肖像。mod 用游戏自己注册肖像的脚本语法写出要交给插件绘制的肖像键，再加几个额外的键（`live2d = yes`、`spine = yes`、`live2d_model`、`live2d_view`，以及描述鼠标跟随、点击、拖拽、缩放的 `live2d_actions`）。插件从已启用 mod 的 `gfx/portraits/live2d/*.txt`（引擎不读的目录）或 `gfx/portraits/portraits/*.txt` 读取，把每个模型绑定到引擎报告的肖像键上。没有插件的游戏照常画原来的肖像。详见 [docs/portrait-mod-design.md](docs/portrait-mod-design.md)。`python scripts\make_human_mod.py --enable` 会用 `models_dxt5\` 里的模型生成一个替换人类肖像的测试 mod；`python scripts\load_save.py <存档> --folder <目录>` 让游戏读入存档并注入插件。交互目前只解析，尚未实现。
+推荐的用法是做一个 mod：mod 带着模型，并声明它们替换哪些肖像。mod 用游戏自己注册肖像的脚本语法写出要交给插件绘制的肖像键，再加几个额外的键（`live2d = yes`、`spine = yes`、`live2d_model`、`live2d_view`，以及描述鼠标跟随、点击、拖拽、缩放的 `live2d_actions`）。插件从已启用 mod 的 `gfx/portraits/live2d/*.txt`（引擎不读的目录）或 `gfx/portraits/portraits/*.txt` 读取，把每个模型绑定到引擎报告的肖像键上。没有插件的游戏照常画原来的肖像。详见 [docs/portrait-mod-design.md](docs/portrait-mod-design.md)。`python scripts\make_human_mod.py --enable` 会用 `models_dxt5\` 里的模型生成一个替换人类肖像的测试 mod；`python scripts\load_save.py <存档> --folder <目录>` 让游戏读入存档并注入插件。`mouse_follow` 已可用（头和眼睛跟着鼠标；ini 里 `interactions=0` 可关闭）；`click`、`drag`、`scale` 目前只解析，尚未实现。
 
 ### 离屏查看器
 
@@ -84,7 +84,7 @@ DLL 只适用于它的 SDK 所定位的那个 `stellaris.exe`（加载时检查�
 1. **已完成：** 钩子、纹理写入、恢复、卸载。
 2. **已完成：** Core 加载、模型、动作、物理、渲染器、画进游戏。
 3. **已完成：** 同时多个模型、DXT5 贴图、按肖像键绑定模型的肖像组 mod。
-4. mod 可声明的交互（鼠标跟随、点击、拖拽、缩放）、Spine、按领袖或按界面绑定。
+4. **已完成：** 鼠标跟随。接下来：点击、拖拽、缩放、Spine、按领袖或按界面绑定。
 5. 状态变体（例如受伤）。
 6. 由 CI 发布构建。
 

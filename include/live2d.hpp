@@ -34,6 +34,7 @@ struct Settings {
     };
     std::vector<ModelEntry> models;
     std::vector<std::string> extra_mod_dirs;  // mod root folders read as if they were enabled (development)
+    bool interactions = true;  // the mouse follow (and later click, drag, zoom) that mods declare; off = models just play
     int fps = 30;          // how often a model is advanced and redrawn
     bool physics = true;   // secondary motion from the models' physics3.json
 

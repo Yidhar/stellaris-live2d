@@ -2,6 +2,7 @@
 
 #include "live2d_character.hpp"
 #include "live2d_renderer.hpp"
+#include "portrait_input.hpp"
 
 #include <windows.h>
 #include <algorithm>
@@ -41,6 +42,7 @@ struct Slot {
     std::shared_ptr<Character> character;
     View view;
     std::string name;
+    MouseFollow follow;
 };
 
 } // namespace
@@ -53,6 +55,7 @@ struct Live2DPainter::Impl {
     uint64_t generation = 0;  // changes whenever `slots` does
     int fps = 30;
     bool physics = true;
+    bool interactions = true;
     std::string loaded_core;
     std::string loaded_signature;                // what the slots were made from, to see when that changes
     std::unordered_map<std::string, int> by_key; // portrait key -> slot, when the mods register portraits
@@ -112,6 +115,7 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         bool auto_view;
         float body, x, y, h;
         std::string actions;  // part of what makes two uses of one model different slots
+        MouseFollow follow;
     };
     std::vector<Want> wants;
     std::unordered_map<std::string, int> by_key;
@@ -120,7 +124,7 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         char id[256];
         snprintf(id, sizeof id, "m%d f%.2f c%d:%s:%d d%d s%d", (int)e.mouse_follow.enabled, e.mouse_follow.strength, (int)e.click.enabled,
                  e.click.motion_group.c_str(), e.click.motion_index, (int)e.drag.enabled, (int)e.scale.enabled);
-        Want w{ e.model, e.auto_view, e.auto_body, e.view_x, e.view_y, e.view_h, id };
+        Want w{ e.model, e.auto_view, e.auto_body, e.view_x, e.view_y, e.view_h, id, e.mouse_follow };
         int index = -1;
         for (size_t i = 0; i < wants.size(); ++i) {
             const Want& o = wants[i];
@@ -134,7 +138,7 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
     }
     const bool registry_mode = !wants.empty();
     if (!registry_mode) {
-        for (const Settings::ModelEntry& e : s.models) wants.push_back({ e.path, e.auto_view, e.auto_body, e.view_x, e.view_y, e.view_h, "" });
+        for (const Settings::ModelEntry& e : s.models) wants.push_back({ e.path, e.auto_view, e.auto_body, e.view_x, e.view_y, e.view_h, "", MouseFollow{} });
     }
     std::string signature = s.core_dll + (registry_mode ? "|registry" : "|list");
     for (const Want& w : wants) {
@@ -162,6 +166,7 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
     {
         std::lock_guard<std::mutex> lock(d.mutex);
         d.fps = s.fps < 1 ? 1 : s.fps > 120 ? 120 : s.fps;
+        d.interactions = s.interactions;
         if (d.physics != s.physics) {
             d.physics = s.physics;
             for (auto& slot : d.slots) slot->character->set_physics_enabled(s.physics);
@@ -200,6 +205,7 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         slot->character = character;
         slot->name = std::filesystem::path(w.path).parent_path().filename().string();
         slot->view = { w.x, w.y, w.h };
+        slot->follow = w.follow;
         if (w.auto_view) character->model().SuggestPortraitView(&slot->view.center_x, &slot->view.center_y, &slot->view.height, w.body);
         const Model& m = character->model();
         Log("live2d: loaded %s in %.0f ms: canvas %.0fx%.0f, %d parameters, %d drawables, %zu textures (%.1f MB); view (%.3f, %.3f, %.3f)%s",
@@ -232,9 +238,11 @@ bool Live2DPainter::Ready() const {
 PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Texture2D* target, const D3D11_TEXTURE2D_DESC& desc) {
     Impl& d = *impl_;
     int fps;
+    bool interactions;
     {
         std::lock_guard<std::mutex> lock(d.mutex);
         fps = d.fps;
+        interactions = d.interactions;
         if (d.slots.empty()) return PaintResult::Skipped;
         if (d.generation != d.gpu_generation) {
             // the set of models changed: start over with the new ones (GPU resources are made when a model is first used)
@@ -334,6 +342,25 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
         ++d.serial;
     }
     if (gs.stepped != d.serial) {
+        // the look target: where the mouse pointer is, seen from this portrait (or from the middle of the window when the
+        // portrait's place on the screen is not known); back to the middle while the game is not the foreground window
+        float lx = 0.0f, ly = 0.0f;
+        const bool follow = interactions && gs.slot->follow.enabled;
+        if (follow) {
+            float mx, my, ww, wh;
+            if (MouseInGameWindow(&mx, &my, &ww, &wh)) {
+                ScreenRect r;
+                if (PortraitScreenRect(portrait, &r)) {
+                    lx = (mx - (r.x + r.w * 0.5f)) / (0.4f * ww);
+                    ly = ((r.y + r.h * 0.5f) - my) / (0.4f * wh);
+                    if (r.mirrored) lx = -lx;
+                } else {
+                    lx = (mx - ww * 0.5f) / (ww * 0.5f);
+                    ly = (wh * 0.5f - my) / (wh * 0.5f);
+                }
+            }
+        }
+        character.SetLookTarget(lx, ly, follow ? gs.slot->follow.strength : 0.0f);
         const uint64_t t0 = Ticks();
         character.Tick((float)step);
         d.tick_ticks += Ticks() - t0;

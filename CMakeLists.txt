@@ -49,6 +49,7 @@ add_library(stellaris_live2d SHARED
     src/portrait_hook.cpp
     src/portrait_live2d.cpp
     src/portrait_registry.cpp
+    src/portrait_input.cpp
     src/pdx_script.cpp
 )
 target_include_directories(stellaris_live2d PRIVATE include sdk)

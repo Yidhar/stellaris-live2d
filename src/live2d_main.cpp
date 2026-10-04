@@ -53,7 +53,9 @@ void WriteDefaultIni(const std::string& path) {
               "; secondary motion (hair, clothes) from the model's physics3.json\n"
               "physics=1\n"
               "; mod root folders read as if they were enabled (development): the portrait registrations in them are used\n"
-              "extra_mod_dirs=\n", f);
+              "extra_mod_dirs=\n"
+              "; the interactions mods declare (mouse follow, ...); 0 = the models only play their own motions\n"
+              "interactions=1\n", f);
         fclose(f);
     }
 }
@@ -120,6 +122,7 @@ l2d::Settings ReadIni(const std::string& path) {
         while (!item.empty() && (item.front() == ' ' || item.front() == '\t')) item.erase(item.begin());
         if (!item.empty()) s.extra_mod_dirs.push_back(item);
     }
+    s.interactions = GetPrivateProfileIntA("live2d", "interactions", 1, path.c_str()) != 0;
     s.fps = GetPrivateProfileIntA("live2d", "fps", 30, path.c_str());
     s.physics = GetPrivateProfileIntA("live2d", "physics", 1, path.c_str()) != 0;
     s.test_pattern = GetPrivateProfileIntA("live2d", "test_pattern", 0, path.c_str()) != 0;
