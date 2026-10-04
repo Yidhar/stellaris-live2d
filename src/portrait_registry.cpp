@@ -205,7 +205,7 @@ void ScanMod(const fs::path& root, const std::string& name, bool parse, Registry
         }
     }
     if (parse && (reg->entries.size() != before || files))
-        reg->messages.push_back("mod " + name + " (" + root.string() + "): " + std::to_string(reg->entries.size() - before) + " new portrait key(s) in " + std::to_string(files) + " file(s)");
+        reg->messages.push_back("mod " + name + " (" + root.string() + "): " + std::to_string(reg->entries.size() - before) + " portrait key(s) in " + std::to_string(files) + " file(s)");
 }
 
 } // namespace

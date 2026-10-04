@@ -168,7 +168,9 @@ def main():
     os.makedirs(side)
     with open(os.path.join(side, "00_live2d_humans.txt"), "w", encoding="utf-8", newline="\n") as f:
         f.write("# Which of this mod's portraits are Live2D, and how. Read by stellaris_live2d.dll, not by the game.\n\n"
-                "portraits = {\n" + "".join(live2d_entry(new_key(k), m, sounds) for k, m in ASSIGN.items()) + "}\n")
+                "portraits = {\n" + "".join(live2d_entry(new_key(k), m, sounds) for k, m in ASSIGN.items())
+                + "\n\t# a leader a script or the empire designer gave one of the vanilla portraits by name is not drawn from the group, so the\n"
+                  "\t# vanilla keys get the same models\n" + "".join(live2d_entry(k, m, sounds) for k, m in ASSIGN.items()) + "}\n")
 
     descriptor = ('version="0.2.0"\ntags={\n\t"Graphics"\n\t"Species"\n}\nname="Live2D Human Portraits (test)"\n'
                   'supported_version="v4.5.*"\n')

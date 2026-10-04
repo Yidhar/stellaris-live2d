@@ -152,6 +152,11 @@ the same for the same leader (and changes for everyone when the list's length ch
 for the first time it sees a key, e.g. `portrait key human_female_01 575x380 kind 0 (pop group #15 of human) -> not registered, the game
 draws it`: a key without the mod's prefix in that line is one the mod's group did not replace.
 
+**Portraits named outright are not drawn from a group.** A leader a script created with `portrait = human_female_05`, or whose portrait the
+player chose by name in the empire designer, has that *key* as its selector (the log says `leader #167772188 of human_female_05`, the group
+position holding the key itself), so no `portrait_groups` entry reaches it. To cover those too, give the vanilla keys a model in the plugin's
+file as well (`scripts/make_human_mod.py` binds `human_female_01..05` and `human_male_01..05` to the models of their `l2d_` counterparts).
+
 ## Making a mod
 
 1. Pack each model's textures to DXT5 (the format of the game's own textures; a quarter of the video memory, no mip building at
