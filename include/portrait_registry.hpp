@@ -10,12 +10,12 @@
 //     live2d_model = "gfx/live2d/x/x.model3.json"   path inside the mod
 //     live2d_unmirror = yes             (default) the GUI mirrors some portraits (the council does); the plugin draws them flipped
 //     live2d_view = { auto = yes  body = 0.46 }      or { x = 0.44  y = 0.19  height = 0.26 }, fractions of the model canvas
+//     live2d_scale = 1.0                magnifies the framed part around its centre: 1.25 shows a quarter less of the model
 //     live2d_actions = {
 //         mouse_follow = { enabled = yes  strength = 0.6 }
 //         click        = { enabled = yes  motion_group = "touch*"  motion_index = -1 }   // or motion_groups = { a b c }
 //                         add  sounds = { "sound/a.wav" "sound/b.ogg" }  volume = 1.0   to say a line instead of the motion's Sound
 //         drag         = { enabled = yes  strength = 1.0 }
-//         scale        = { enabled = yes  min = 0.8  max = 1.6 }
 //     }
 //
 // `live2d = yes` entries are found in the portraits blocks of the mod's files and in blocks named `live2d_portraits`.
@@ -38,7 +38,6 @@ struct ClickAction {
     std::string expression;     // read, not implemented yet
 };
 struct DragAction { bool enabled = false; float strength = 1.0f; };
-struct ScaleAction { bool enabled = false; float min = 0.5f, max = 2.0f; };
 
 struct PortraitEntry {
     std::string key;            // the portrait key (`human_female_01`), what the engine reports for a portrait object
@@ -48,10 +47,10 @@ struct PortraitEntry {
     bool auto_view = true;
     float auto_body = 0.46f;
     float view_x = 0.44f, view_y = 0.19f, view_h = 0.26f;
+    float scale = 1.0f;         // live2d_scale: >1 shows a smaller part of the model, bigger
     MouseFollow mouse_follow;
     ClickAction click;
     DragAction drag;
-    ScaleAction scale;
     std::string source;         // file and line, for the log
 };
 

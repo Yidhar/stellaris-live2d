@@ -64,6 +64,7 @@ void ReadEntry(const pdx::Node& e, const fs::path& root, const std::string& file
     p.live2d = e.Bool("live2d");
     p.spine = e.Bool("spine");
     p.unmirror = e.Bool("live2d_unmirror", true);
+    p.scale = std::clamp((float)e.Num("live2d_scale", 1.0), 0.1f, 10.0f);
     p.source = file + ":" + std::to_string(e.line);
     if (!p.live2d && !p.spine) return;
     const std::string model = e.Str(p.live2d ? "live2d_model" : "spine_model");
@@ -92,10 +93,6 @@ void ReadEntry(const pdx::Node& e, const fs::path& root, const std::string& file
             p.click.expression = n.Str("expression");
         });
         p.drag.enabled = Action(*a, "drag", [&](const pdx::Node& n) { p.drag.strength = (float)n.Num("strength", 1.0); });
-        p.scale.enabled = Action(*a, "scale", [&](const pdx::Node& n) {
-            p.scale.min = (float)n.Num("min", 0.5);
-            p.scale.max = (float)n.Num("max", 2.0);
-        });
     }
     // the last definition of a key wins
     for (PortraitEntry& old : reg->entries) {

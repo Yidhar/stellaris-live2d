@@ -27,6 +27,8 @@ ASSIGN = {
 }
 # a model whose automatic crop is wrong gets its own
 VIEWS = {"d307_s4703": "x = 0.48 y = 0.49 height = 0.17"}
+# live2d_scale per portrait key, to show the option: the first council slot is magnified by 30 percent
+SCALES = {"human_female_04": 1.3}
 
 
 def entry(key, model, sounds):
@@ -34,16 +36,16 @@ def entry(key, model, sounds):
     view = f"{{ {view} }}" if view else "{ auto = yes  body = 0.46 }"
     lines = " ".join(f'"{s}"' for s in sounds)
     say = f"  sounds = {{ {lines} }}" if sounds else ""
+    scale = f"		live2d_scale = {SCALES[key]}\n" if key in SCALES else ""
     return f"""	{key} = {{
 		live2d = yes
 		live2d_unmirror = yes
-		live2d_model = "gfx/live2d/{model}/model.model3.json"
+{scale}		live2d_model = "gfx/live2d/{model}/model.model3.json"
 		live2d_view = {view}
 		live2d_actions = {{
 			mouse_follow = {{ enabled = yes  strength = 0.6 }}
 			click = {{ enabled = yes  motion_group = "touch*"{say} }}
 			drag = {{ enabled = no }}
-			scale = {{ enabled = yes  min = 0.8  max = 1.6 }}
 		}}
 	}}
 """

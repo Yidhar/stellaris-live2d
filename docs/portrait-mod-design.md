@@ -45,12 +45,12 @@ portraits = {
 		spine  = no                # or as a Spine skeleton (read, not drawn yet)
 		live2d_model = "gfx/live2d/pa15/model.model3.json"     # inside the mod
 		live2d_view = { auto = yes  body = 0.46 }               # or { x = 0.44  y = 0.19  height = 0.26 }
+		live2d_scale = 1.0         # magnifies the framed part around its centre: 1.25 shows a quarter less of the model
 		live2d_actions = {
 			mouse_follow = { enabled = yes  strength = 0.6 }
 			click        = { enabled = yes  motion_group = "touch*"  motion_index = -1 }   # or motion_groups = { touch_1 touch_2 }
 			                                                                              # + sounds = { "sound/a.wav" }  volume = 1.0
 			drag         = { enabled = no   strength = 1.0 }
-			scale        = { enabled = yes  min = 0.8  max = 1.6 }
 		}
 	}
 }
@@ -66,14 +66,14 @@ portraits = {
 | `live2d_actions.click` | a left click that lands on the portrait (inside the rectangle the GUI draws it in and its clip area) starts a motion from one of the groups named by `motion_group` or `motion_groups`, picked at random but never the one played last; `motion_index` -1 = a random motion of the group. A name ending in `*` matches every group that starts with the rest (`touch*` = `touch_1`, `touch_2`, ..., never `Idle`). The click is not swallowed: a button the GUI draws over the portrait is pressed too. `expression` is read but not implemented |
 | voice lines | what the portrait says when a click starts a motion: one of `click.sounds` (`sounds = { "sound/a.wav" "sound/b.ogg" }` or `sound = "..."`, paths inside the mod, taken in turn) if the click names any, else the `Sound` of the motion that started (the standard `"Sound": "voice/touch_1.wav"` key of a `Motions` entry in `model3.json`, relative to the model's folder). WAV, MP3, FLAC and Ogg Vorbis are played (not Opus or AAC). `click.volume` (default 1) scales a line; the ini keys `audio` (default 1) and `volume` (default 0.8) switch the voice off and set the master volume. A new line cuts off the portrait's previous one. Only motions started by a click speak; the idle and wait motions do not |
 | `live2d_actions.drag` | dragging on the portrait moves the model's look/body parameters |
-| `live2d_actions.scale` | the mouse wheel over the portrait zooms between `min` and `max` |
+| `live2d_scale` | a fixed magnification of the framed part, around its centre (0.1 to 10, default 1): the framed height is divided by it, so 1.3 shows a bit more than three quarters of what `live2d_view` frames. Portraits of one model with different scales are separate slots, each with its own copy of the model's textures. There is no interactive zoom: it was left out as not needed |
 
 **Status:** the registration, model loading and drawing work (checked in the game with a mod that replaces the human
 portraits). `mouse_follow` works (checked in the game: the head and eyes of the large leader portrait follow the pointer to the
 four screen edges, and in the council with the pointer around the four portraits, where the mirrored ones turn the right way).
 The look target is the pointer relative to the portrait's own place on the screen. `click` (motion and voice line) and `live2d_unmirror` are implemented
 (the click polls the left button once per frame, so a press shorter than a frame can be missed; a window drawn over the portrait does
-not stop the click from counting). `drag` and `scale` are parsed and kept but not implemented.
+not stop the click from counting). `drag` is parsed and kept but not implemented.
 
 ## Making a mod
 

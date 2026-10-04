@@ -132,6 +132,7 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         MouseFollow follow;
         ClickAction click;
         bool unmirror = true;
+        float scale = 1.0f;
     };
     std::vector<Want> wants;
     std::unordered_map<std::string, int> by_key;
@@ -143,9 +144,9 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         groups += "|";
         for (const std::string& g : e.click.sounds) groups += g + ",";
         groups += std::to_string(e.click.volume);
-        snprintf(id, sizeof id, "m%d f%.2f c%d:%d u%d d%d s%d ", (int)e.mouse_follow.enabled, e.mouse_follow.strength, (int)e.click.enabled,
-                 e.click.motion_index, (int)e.unmirror, (int)e.drag.enabled, (int)e.scale.enabled);
-        Want w{ e.model, e.auto_view, e.auto_body, e.view_x, e.view_y, e.view_h, id + groups, e.mouse_follow, e.click, e.unmirror };
+        snprintf(id, sizeof id, "m%d f%.2f c%d:%d u%d d%d z%.3f ", (int)e.mouse_follow.enabled, e.mouse_follow.strength, (int)e.click.enabled,
+                 e.click.motion_index, (int)e.unmirror, (int)e.drag.enabled, e.scale);
+        Want w{ e.model, e.auto_view, e.auto_body, e.view_x, e.view_y, e.view_h, id + groups, e.mouse_follow, e.click, e.unmirror, e.scale };
         int index = -1;
         for (size_t i = 0; i < wants.size(); ++i) {
             const Want& o = wants[i];
@@ -231,6 +232,7 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         slot->click = w.click;
         slot->unmirror = w.unmirror;
         if (w.auto_view) character->model().SuggestPortraitView(&slot->view.center_x, &slot->view.center_y, &slot->view.height, w.body);
+        slot->view.height /= w.scale;  // live2d_scale: magnify around the middle of the framed part
         const Model& m = character->model();
         Log("live2d: loaded %s in %.0f ms: canvas %.0fx%.0f, %d parameters, %d drawables, %zu textures (%.1f MB); view (%.3f, %.3f, %.3f)%s",
             slot->name.c_str(), (Ticks() - t0) * 1000.0 / TickFrequency(), m.canvas_size.x, m.canvas_size.y, m.parameter_count,
