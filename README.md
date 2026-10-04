@@ -83,7 +83,7 @@ plugin reads them from the enabled mods' `gfx/portraits/live2d/*.txt` (a folder 
 plugin keeps drawing the normal portraits. See [docs/portrait-mod-design.md](docs/portrait-mod-design.md).
 `python scripts\make_human_mod.py --enable` builds a test mod that replaces the human portraits with the models in
 `models_dxt5\`; `python scripts\load_save.py <save> --folder <folder>` restarts the game on a save and injects the plugin.
-`mouse_follow` (head and eyes follow the pointer, seen from the portrait's own place on the screen), `click` (a touch motion and its voice line, `audio` and `volume` in the ini)
+`mouse_follow` (head and eyes follow the pointer, seen from the portrait's own place on the screen), `click` (a touch motion and its voice line, bound per motion group, `audio` and `volume` in the ini)
 and `live2d_unmirror` (portraits the GUI mirrors are drawn flipped, so text reads correctly) work; `interactions=0` in the ini
 turns the interactions off. `drag` is parsed but not implemented yet. `live2d_scale` in a mod entry sets a fixed magnification of the framed part.
 

@@ -144,6 +144,22 @@ int Model::FindPart(const std::string& id) const {
 }
 
 void Model::SuggestPortraitView(float* center_x, float* center_y, float* height, float body_fraction) const {
+    ViewFromBounds(MeasurePortrait(), body_fraction, center_x, center_y, height);
+}
+
+void Model::ViewFromBounds(const PortraitBounds& b, float body_fraction, float* center_x, float* center_y, float* height) {
+    if (!b.valid) {
+        *center_x = 0.5f; *center_y = 0.3f; *height = 0.3f;
+        return;
+    }
+    const float picture = b.top - b.bottom;
+    *center_x = b.center_x;
+    *height = picture * body_fraction;
+    *center_y = (1.0f - b.top) - picture * 0.03f + *height * 0.5f;  // the crop starts 3% of the picture above the head
+}
+
+Model::PortraitBounds Model::MeasurePortrait() const {
+    PortraitBounds out;
     std::vector<float> xs, ys;  // canvas fractions, y up
     const int* vcounts = api_->GetDrawableVertexCounts(model_);
     const core::Vec2** positions = api_->GetDrawableVertexPositions(model_);
@@ -157,10 +173,7 @@ void Model::SuggestPortraitView(float* center_x, float* center_y, float* height,
             ys.push_back((positions[i][v].y * pixels_per_unit + canvas_origin.y) / canvas_size.y);
         }
     }
-    if (ys.size() < 16) {
-        *center_x = 0.5f; *center_y = 0.3f; *height = 0.3f;
-        return;
-    }
+    if (ys.size() < 16) return out;
     auto percentile = [](std::vector<float> v, double p) {
         const size_t k = (size_t)(p * (v.size() - 1));
         std::nth_element(v.begin(), v.begin() + k, v.end());
@@ -172,9 +185,11 @@ void Model::SuggestPortraitView(float* center_x, float* center_y, float* height,
     std::vector<float> band;
     for (size_t i = 0; i < ys.size(); ++i)
         if (ys[i] > top - picture / 3.0f) band.push_back(xs[i]);
-    *center_x = percentile(band.empty() ? xs : band, 0.5);
-    *height = picture * body_fraction;
-    *center_y = (1.0f - top) - picture * 0.03f + *height * 0.5f;  // the crop starts 3% of the picture above the head
+    out.valid = true;
+    out.top = top;
+    out.bottom = bottom;
+    out.center_x = percentile(band.empty() ? xs : band, 0.5);
+    return out;
 }
 
 void Model::SaveParameters() { saved_parameters_.assign(parameter_values, parameter_values + parameter_count); }

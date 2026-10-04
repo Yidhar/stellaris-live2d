@@ -29,6 +29,9 @@ ASSIGN = {
 VIEWS = {"d307_s4703": "x = 0.48 y = 0.49 height = 0.17"}
 # live2d_scale per portrait key, to show the option: the first council slot is magnified by 30 percent
 SCALES = {"human_female_04": 1.3}
+# lines bound to single motion groups, to show `voices`: this portrait says line1 for touch_1, line2 for touch_2, line3 for touch_3, and
+# nothing for its other touch motions (the others say any of the lines in turn)
+VOICES = {"human_female_01": {"touch_1": "line1.wav", "touch_2": "line2.wav", "touch_3": "line3.wav"}}
 
 
 def entry(key, model, sounds):
@@ -36,6 +39,9 @@ def entry(key, model, sounds):
     view = f"{{ {view} }}" if view else "{ auto = yes  body = 0.46 }"
     lines = " ".join(f'"{s}"' for s in sounds)
     say = f"  sounds = {{ {lines} }}" if sounds else ""
+    if key in VOICES:
+        bound = " ".join(f'{group} = "sound/live2d_test/{name}"' for group, name in VOICES[key].items())
+        say = f"  voices = {{ {bound} }}"
     scale = f"		live2d_scale = {SCALES[key]}\n" if key in SCALES else ""
     return f"""	{key} = {{
 		live2d = yes

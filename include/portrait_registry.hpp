@@ -14,7 +14,9 @@
 //     live2d_actions = {
 //         mouse_follow = { enabled = yes  strength = 0.6 }
 //         click        = { enabled = yes  motion_group = "touch*"  motion_index = -1 }   // or motion_groups = { a b c }
-//                         add  sounds = { "sound/a.wav" "sound/b.ogg" }  volume = 1.0   to say a line instead of the motion's Sound
+//                         add  voices = { touch_1 = "sound/a.wav"  touch_2 = { "sound/b.ogg" "sound/c.ogg" } }  for lines per motion group,
+//                              sounds = { "sound/d.wav" }  for lines of any other motion, volume = 1.0 to scale them; a motion with
+//                              neither says the Sound given for it in model3.json
 //         drag         = { enabled = yes  strength = 1.0 }
 //     }
 //
@@ -26,13 +28,23 @@
 namespace l2d {
 
 struct MouseFollow { bool enabled = false; float strength = 1.0f; };
+// the lines a motion group says: `voices = { touch_1 = "sound/a.wav"  touch_2 = { "sound/b.wav" "sound/c.wav" }  wait* = ... }`; the key is a
+// group name or a prefix ending in *, several lines are taken in turn
+struct VoiceBinding {
+    std::string pattern;
+    std::vector<std::string> lines;  // absolute paths
+};
+
 struct ClickAction {
     bool enabled = false;
     // motion groups to pick from at random: `motion_group = "name"` or `motion_groups = { a b }`; a name ending in * matches every
     // group that starts with the rest ("touch*": touch_1, touch_2, ...). The Idle group is never chosen by a pattern.
     std::vector<std::string> motion_groups;
     int motion_index = -1;      // -1: a random motion of the chosen group
-    // voice lines (absolute paths) to pick from at random instead of the motion's own `Sound`; `sound = "file"` or `sounds = { a b }`
+    // voice lines per motion group (checked first), see VoiceBinding
+    std::vector<VoiceBinding> voices;
+    // voice lines (absolute paths) said by any motion that has no entry in `voices`, in turn, instead of the motion's own `Sound`;
+    // `sound = "file"` or `sounds = { a b }`
     std::vector<std::string> sounds;
     float volume = 1.0f;        // of those lines and of the motion's, relative to the master volume
     std::string expression;     // read, not implemented yet

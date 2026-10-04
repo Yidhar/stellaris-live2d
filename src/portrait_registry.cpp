@@ -86,6 +86,21 @@ void ReadEntry(const pdx::Node& e, const fs::path& root, const std::string& file
             p.click.motion_groups = n.List("motion_groups");
             if (!n.Str("motion_group").empty()) p.click.motion_groups.push_back(n.Str("motion_group"));
             p.click.motion_index = (int)n.Num("motion_index", -1);
+            auto absolute = [&](const std::string& s) { return (root / fs::u8path(s)).lexically_normal().string(); };
+            if (const pdx::Node* v = n.Find("voices"); v && v->block) {
+                for (const pdx::Node& b : v->children) {
+                    if (b.key.empty()) continue;
+                    VoiceBinding vb;
+                    vb.pattern = b.key;
+                    if (b.block) {
+                        for (const pdx::Node& l : b.children)
+                            if (l.key.empty() && !l.block) vb.lines.push_back(absolute(l.value));
+                    } else {
+                        vb.lines.push_back(absolute(b.value));
+                    }
+                    if (!vb.lines.empty()) p.click.voices.push_back(std::move(vb));
+                }
+            }
             std::vector<std::string> sounds = n.List("sounds");
             if (!n.Str("sound").empty()) sounds.push_back(n.Str("sound"));
             for (const std::string& s : sounds) p.click.sounds.push_back((root / fs::u8path(s)).lexically_normal().string());

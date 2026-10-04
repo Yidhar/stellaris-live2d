@@ -37,15 +37,26 @@ struct Frame {
     uint64_t serial = 0;  // the step this frame was drawn for
 };
 
-// A loaded model and the view that frames it as a portrait. Shared between the worker and the render thread; after it is
-// published only the render thread touches the character.
+// One loaded model, once, however many portrait keys use it: the Core model with its textures, motions and physics, and its
+// animation state. Shared between the worker and the render thread; after it is published only the render thread touches the
+// character.
 struct Slot {
+    std::string path, name;
     std::shared_ptr<Character> character;
+    Model::PortraitBounds bounds;  // measured at load, while nobody else used the model
+};
+
+// How a portrait key shows a model: the framing, and what it does when the mouse is near or it is clicked. Cheap: the model, its
+// textures and its animation are the slot's; this holds only settings, and the frames drawn for it.
+struct Presentation {
+    int slot = -1;  // index into the slots
     View view;
-    std::string name;
     MouseFollow follow;
     ClickAction click;
     bool unmirror = true;
+    std::string identity;               // the settings as text, to see what a reload changed
+    std::vector<uint32_t> voice_next;   // render thread: per `click.voices` entry, which of its lines comes next
+    uint32_t sound_next = 0;            // the same for `click.sounds`
 };
 
 } // namespace
@@ -55,14 +66,15 @@ struct Live2DPainter::Impl {
     std::mutex mutex;
     std::shared_ptr<core::Api> api;
     std::vector<std::shared_ptr<Slot>> slots;
-    uint64_t generation = 0;  // changes whenever `slots` does
+    std::vector<std::shared_ptr<Presentation>> presentations;
+    uint64_t generation = 0;  // changes whenever the slots or presentations do
     int fps = 30;
     bool physics = true;
     bool interactions = true;
     bool audio = true;
     std::string loaded_core;
     std::string loaded_signature;                // what the slots were made from, to see when that changes
-    std::unordered_map<std::string, int> by_key; // portrait key -> slot, when the mods register portraits
+    std::unordered_map<std::string, int> by_key; // portrait key -> presentation, when the mods register portraits
     bool registry_mode = false;
     bool voice_failed = false;  // worker thread: opening the playback device failed, do not retry every two seconds
 
@@ -70,19 +82,20 @@ struct Live2DPainter::Impl {
     struct GpuSlot {
         std::shared_ptr<Slot> slot;
         Renderer::GpuPtr gpu;
-        std::map<uint64_t, Frame> frames;  // by output size and format
-        uint64_t stepped = 0;              // the last step this model was advanced for
+        std::map<std::pair<int, uint64_t>, Frame> frames;  // by presentation, then output size, format and flip
+        uint64_t stepped = 0;                              // the last step this model was advanced for
     };
     ComPtr<ID3D11Device> device;
     ComPtr<ID3D11DeviceContext> deferred;
     std::unique_ptr<Renderer> renderer;
     std::vector<GpuSlot> gpu_slots;
+    std::vector<std::shared_ptr<Presentation>> gpu_presentations;
     uint64_t gpu_generation = 0;
-    std::unordered_map<const void*, int> assignment;  // fallback mode: portrait object -> slot
+    std::unordered_map<const void*, int> assignment;  // fallback mode: portrait object -> presentation
     std::unordered_map<std::string, int> gpu_by_key;  // registry mode: copy of by_key for this generation
     bool gpu_registry_mode = false;
     std::set<std::string> seen;                       // portrait keys already logged
-    int next_slot = 0;
+    int next_presentation = 0;
     uint64_t last_call = 0, serial = 0;
     double pending = 0.0;  // seconds since the last step that have not been stepped yet
     bool reported_failure = false;
@@ -93,10 +106,11 @@ struct Live2DPainter::Impl {
 
     void ResetGpu() {
         gpu_slots.clear();
+        gpu_presentations.clear();
         assignment.clear();
         gpu_by_key.clear();
         seen.clear();
-        next_slot = 0;
+        next_presentation = 0;
         renderer.reset();
         deferred.Reset();
         device.Reset();
@@ -123,55 +137,82 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         Voice::Get().Shutdown();
     }
 
-    // what to load: the models the mods register (several portrait keys can share one), or else the ini's list
-    struct Want {
-        std::string path;
-        bool auto_view;
-        float body, x, y, h;
-        std::string actions;  // part of what makes two uses of one model different slots
+    // What to load: every model once (the mods' portrait keys can share one), and for every portrait key how it presents its model.
+    struct PresWant {
+        int model = -1;  // index into `paths`
+        bool auto_view = false;
+        float body = 0.46f, x = 0, y = 0, h = 0, scale = 1.0f;
+        bool unmirror = true;
         MouseFollow follow;
         ClickAction click;
-        bool unmirror = true;
-        float scale = 1.0f;
+        std::string identity;
     };
-    std::vector<Want> wants;
+    std::vector<std::string> paths;
+    std::vector<PresWant> wants;
     std::unordered_map<std::string, int> by_key;
+    auto model_index = [&](const std::string& path) {
+        for (size_t i = 0; i < paths.size(); ++i)
+            if (paths[i] == path) return (int)i;
+        paths.push_back(path);
+        return (int)paths.size() - 1;
+    };
     for (const PortraitEntry& e : registry.entries) {
         if (!e.live2d) continue;  // spine entries are read but not drawn yet
-        char id[256];
+        PresWant w;
+        w.model = model_index(e.model);
+        w.auto_view = e.auto_view;
+        w.body = e.auto_body;
+        w.x = e.view_x;
+        w.y = e.view_y;
+        w.h = e.view_h;
+        w.scale = e.scale;
+        w.unmirror = e.unmirror;
+        w.follow = e.mouse_follow;
+        w.click = e.click;
         std::string groups;
         for (const std::string& g : e.click.motion_groups) groups += g + ",";
         groups += "|";
         for (const std::string& g : e.click.sounds) groups += g + ",";
-        groups += std::to_string(e.click.volume);
-        snprintf(id, sizeof id, "m%d f%.2f c%d:%d u%d d%d z%.3f ", (int)e.mouse_follow.enabled, e.mouse_follow.strength, (int)e.click.enabled,
-                 e.click.motion_index, (int)e.unmirror, (int)e.drag.enabled, e.scale);
-        Want w{ e.model, e.auto_view, e.auto_body, e.view_x, e.view_y, e.view_h, id + groups, e.mouse_follow, e.click, e.unmirror, e.scale };
-        int index = -1;
-        for (size_t i = 0; i < wants.size(); ++i) {
-            const Want& o = wants[i];
-            if (o.path == w.path && o.auto_view == w.auto_view && o.body == w.body && o.x == w.x && o.y == w.y && o.h == w.h && o.actions == w.actions) {
-                index = (int)i;
-                break;
-            }
+        for (const VoiceBinding& v : e.click.voices) {
+            groups += "|" + v.pattern + "=";
+            for (const std::string& l : v.lines) groups += l + ",";
         }
+        char id[256];
+        snprintf(id, sizeof id, "%d|%d %.3f %.3f %.3f %.3f z%.3f|m%d f%.2f c%d:%d u%d d%d v%.3f|", w.model, (int)w.auto_view, w.body, w.x, w.y, w.h,
+                 w.scale, (int)e.mouse_follow.enabled, e.mouse_follow.strength, (int)e.click.enabled, e.click.motion_index, (int)e.unmirror,
+                 (int)e.drag.enabled, e.click.volume);
+        w.identity = id + groups;
+        int index = -1;
+        for (size_t i = 0; i < wants.size(); ++i)
+            if (wants[i].identity == w.identity) { index = (int)i; break; }
         if (index < 0) { wants.push_back(w); index = (int)wants.size() - 1; }
         by_key[e.key] = index;
     }
     const bool registry_mode = !wants.empty();
     if (!registry_mode) {
-        for (const Settings::ModelEntry& e : s.models) wants.push_back({ e.path, e.auto_view, e.auto_body, e.view_x, e.view_y, e.view_h, "", MouseFollow{}, ClickAction{}, false });
+        // the ini's list: one presentation per entry, handed out to the portrait objects in turn
+        for (const Settings::ModelEntry& e : s.models) {
+            PresWant w;
+            w.model = model_index(e.path);
+            w.auto_view = e.auto_view;
+            w.body = e.auto_body;
+            w.x = e.view_x;
+            w.y = e.view_y;
+            w.h = e.view_h;
+            w.unmirror = false;
+            char id[160];
+            snprintf(id, sizeof id, "list %zu|%d|%d %.3f %.3f %.3f %.3f", wants.size(), w.model, (int)w.auto_view, w.body, w.x, w.y, w.h);
+            w.identity = id;
+            wants.push_back(w);
+        }
     }
     std::string signature = s.core_dll + (registry_mode ? "|registry" : "|list");
-    for (const Want& w : wants) {
-        char buf[64];
-        snprintf(buf, sizeof buf, "|%d %.3f %.3f %.3f %.3f ", (int)w.auto_view, w.body, w.x, w.y, w.h);
-        signature += "\n" + w.path + buf + w.actions;
-    }
+    for (const std::string& p : paths) signature += "\nmodel " + p;
+    for (const PresWant& w : wants) signature += "\npresentation " + w.identity;
     {
         std::vector<std::pair<std::string, int>> keys(by_key.begin(), by_key.end());
         std::sort(keys.begin(), keys.end());
-        for (const auto& k : keys) signature += "\n" + k.first + "=" + std::to_string(k.second);
+        for (const auto& k : keys) signature += "\nkey " + k.first + "=" + std::to_string(k.second);
     }
 
     if (!s.live2d || s.core_dll.empty() || wants.empty()) {
@@ -179,12 +220,15 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         if (!d.slots.empty()) {
             Log("live2d: models unloaded");
             d.slots.clear();
+            d.presentations.clear();
             d.by_key.clear();
             d.loaded_signature.clear();
             ++d.generation;
         }
         return;
     }
+    std::unordered_map<std::string, std::shared_ptr<Slot>> loaded;  // models already in memory, to keep when they are still wanted
+    std::shared_ptr<core::Api> api;
     {
         std::lock_guard<std::mutex> lock(d.mutex);
         d.fps = s.fps < 1 ? 1 : s.fps > 120 ? 120 : s.fps;
@@ -195,15 +239,14 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
             for (auto& slot : d.slots) slot->character->set_physics_enabled(s.physics);
         }
         if (!d.slots.empty() && d.loaded_signature == signature) return;
+        if (d.api && d.loaded_core == s.core_dll) {
+            api = d.api;
+            for (const auto& slot : d.slots) loaded[slot->path] = slot;
+        }
     }
 
     // load outside the lock: the render thread keeps drawing whatever is current
     std::string err;
-    std::shared_ptr<core::Api> api;
-    {
-        std::lock_guard<std::mutex> lock(d.mutex);
-        if (d.api && d.loaded_core == s.core_dll) api = d.api;
-    }
     if (!api) {
         api = std::make_shared<core::Api>();
         if (!api->Load(std::wstring(s.core_dll.begin(), s.core_dll.end()), &err)) {
@@ -213,39 +256,59 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         Log("live2d: Cubism Core loaded from %s (version 0x%08X)", s.core_dll.c_str(), api->GetVersion());
     }
     std::vector<std::shared_ptr<Slot>> slots;
-    std::vector<int> slot_of_want(wants.size(), -1);
-    for (size_t wi = 0; wi < wants.size(); ++wi) {
-        const Want& w = wants[wi];
+    std::vector<int> slot_of_path(paths.size(), -1);
+    for (size_t pi = 0; pi < paths.size(); ++pi) {
+        auto kept = loaded.find(paths[pi]);
+        if (kept != loaded.end()) {  // a model that stays is neither loaded nor uploaded again, and keeps its animation
+            slot_of_path[pi] = (int)slots.size();
+            slots.push_back(kept->second);
+            continue;
+        }
         const uint64_t t0 = Ticks();
         auto character = std::make_shared<Character>();
-        if (!character->Load(api.get(), w.path, &err)) {
-            Log("live2d: cannot load %s: %s", w.path.c_str(), err.c_str());
+        if (!character->Load(api.get(), paths[pi], &err)) {
+            Log("live2d: cannot load %s: %s", paths[pi].c_str(), err.c_str());
             continue;
         }
         character->set_physics_enabled(s.physics);
-        if (!character->physics_error().empty()) Log("live2d: %s: physics not loaded: %s", w.path.c_str(), character->physics_error().c_str());
+        if (!character->physics_error().empty()) Log("live2d: %s: physics not loaded: %s", paths[pi].c_str(), character->physics_error().c_str());
         auto slot = std::make_shared<Slot>();
+        slot->path = paths[pi];
         slot->character = character;
-        slot->name = std::filesystem::path(w.path).parent_path().filename().string();
-        slot->view = { w.x, w.y, w.h };
-        slot->follow = w.follow;
-        slot->click = w.click;
-        slot->unmirror = w.unmirror;
-        if (w.auto_view) character->model().SuggestPortraitView(&slot->view.center_x, &slot->view.center_y, &slot->view.height, w.body);
-        slot->view.height /= w.scale;  // live2d_scale: magnify around the middle of the framed part
+        slot->name = std::filesystem::path(paths[pi]).parent_path().filename().string();
+        slot->bounds = character->model().MeasurePortrait();
         const Model& m = character->model();
-        Log("live2d: loaded %s in %.0f ms: canvas %.0fx%.0f, %d parameters, %d drawables, %zu textures (%.1f MB); view (%.3f, %.3f, %.3f)%s",
-            slot->name.c_str(), (Ticks() - t0) * 1000.0 / TickFrequency(), m.canvas_size.x, m.canvas_size.y, m.parameter_count,
-            m.drawable_count, m.textures.size(), [&] { size_t b = 0; for (const Image& i : m.textures) b += i.Bytes(); return b / 1048576.0; }(),
-            slot->view.center_x, slot->view.center_y, slot->view.height, w.auto_view ? " (auto)" : "");
-        slot_of_want[wi] = (int)slots.size();
+        Log("live2d: loaded %s in %.0f ms: canvas %.0fx%.0f, %d parameters, %d drawables, %zu textures (%.1f MB)", slot->name.c_str(),
+            (Ticks() - t0) * 1000.0 / TickFrequency(), m.canvas_size.x, m.canvas_size.y, m.parameter_count, m.drawable_count, m.textures.size(),
+            [&] { size_t b = 0; for (const Image& i : m.textures) b += i.Bytes(); return b / 1048576.0; }());
+        slot_of_path[pi] = (int)slots.size();
         slots.push_back(std::move(slot));
+    }
+    // the presentations: a view worked out from the model's measured bounds or given, magnified by the scale
+    std::vector<std::shared_ptr<Presentation>> presentations;
+    std::vector<int> presentation_of_want(wants.size(), -1);
+    for (size_t wi = 0; wi < wants.size(); ++wi) {
+        const PresWant& w = wants[wi];
+        if (slot_of_path[w.model] < 0) continue;
+        auto p = std::make_shared<Presentation>();
+        p->slot = slot_of_path[w.model];
+        p->view = { w.x, w.y, w.h };
+        if (w.auto_view) Model::ViewFromBounds(slots[p->slot]->bounds, w.body, &p->view.center_x, &p->view.center_y, &p->view.height);
+        p->view.height /= w.scale;  // live2d_scale: magnify around the middle of the framed part
+        p->follow = w.follow;
+        p->click = w.click;
+        p->voice_next.assign(w.click.voices.size(), 0);
+        p->unmirror = w.unmirror;
+        p->identity = w.identity;
+        presentation_of_want[wi] = (int)presentations.size();
+        presentations.push_back(std::move(p));
     }
     std::unordered_map<std::string, int> keys;
     for (const auto& [key, wi] : by_key)
-        if (slot_of_want[wi] >= 0) keys[key] = slot_of_want[wi];
+        if (presentation_of_want[wi] >= 0) keys[key] = presentation_of_want[wi];
     std::lock_guard<std::mutex> lock(d.mutex);
-    d.slots = std::move(slots);  // the previous slots live on until the render thread drops its copies
+    d.slots = std::move(slots);  // models that went away live on until the render thread drops its copies
+    d.presentations = std::move(presentations);
     d.by_key = std::move(keys);
     d.registry_mode = registry_mode;
     ++d.generation;
@@ -253,7 +316,7 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
     d.loaded_core = s.core_dll;
     d.loaded_signature = signature;
     d.slot_count = d.slots.size();
-    if (registry_mode) Log("live2d: %zu portrait key(s) are registered for %zu model(s)", d.by_key.size(), d.slots.size());
+    if (registry_mode) Log("live2d: %zu portrait key(s) use %zu presentation(s) of %zu model(s)", d.by_key.size(), d.presentations.size(), d.slots.size());
 }
 
 bool Live2DPainter::Ready() const {
@@ -270,22 +333,31 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
         fps = d.fps;
         interactions = d.interactions;
         audio = d.audio;
-        if (d.slots.empty()) return PaintResult::Skipped;
+        if (d.slots.empty() || d.presentations.empty()) return PaintResult::Skipped;
         if (d.generation != d.gpu_generation) {
-            // the set of models changed: start over with the new ones (GPU resources are made when a model is first used)
-            d.gpu_slots.clear();
+            // the set of models or presentations changed: a model that stayed keeps its GPU resources, new ones get theirs when first used
+            std::vector<Impl::GpuSlot> fresh;
+            for (const auto& slot : d.slots) {
+                Impl::GpuSlot g;
+                for (auto& old : d.gpu_slots)
+                    if (old.slot == slot) { g = std::move(old); break; }
+                g.slot = slot;
+                g.frames.clear();  // keyed by presentation index, which may have changed
+                fresh.push_back(std::move(g));
+            }
+            d.gpu_slots = std::move(fresh);
+            d.gpu_presentations = d.presentations;
             d.assignment.clear();
-            d.next_slot = 0;
+            d.next_presentation = 0;
             d.gpu_by_key = d.by_key;
             d.gpu_registry_mode = d.registry_mode;
             d.seen.clear();
-            for (const auto& slot : d.slots) { Impl::GpuSlot g; g.slot = slot; d.gpu_slots.push_back(std::move(g)); }
             d.gpu_generation = d.generation;
         }
     }
 
-    // which model this portrait gets: the one registered for its key, or in the fallback mode the next one in turn
-    int index = -1;
+    // which presentation this portrait gets: the one registered for its key, or in the fallback mode the next one in turn
+    int pres_index = -1;
     if (d.gpu_registry_mode) {
         if (!key[0]) return PaintResult::Skipped;  // planets and other objects that show no portrait have no key
         const std::string k = key;
@@ -293,12 +365,13 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
         char id[96];
         snprintf(id, sizeof id, "%s %ux%u", key, desc.Width, desc.Height);
         if (d.seen.insert(id).second)
-            Log("live2d: portrait key %s -> %s", id, it == d.gpu_by_key.end() ? "not registered, the game draws it" : d.gpu_slots[it->second].slot->name.c_str());
+            Log("live2d: portrait key %s -> %s", id,
+                it == d.gpu_by_key.end() ? "not registered, the game draws it" : d.gpu_slots[d.gpu_presentations[it->second]->slot].slot->name.c_str());
         if (it == d.gpu_by_key.end()) {
             ++d.skipped;
             return PaintResult::Skipped;
         }
-        index = it->second;
+        pres_index = it->second;
     }
 
     ID3D11Device* dev = nullptr;
@@ -335,14 +408,15 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
     if (!d.gpu_registry_mode) {  // fallback: handed out in turn when the portrait object is first seen
         auto found = d.assignment.find(portrait);
         if (found == d.assignment.end()) {
-            index = d.next_slot++ % (int)d.gpu_slots.size();
-            d.assignment[portrait] = index;
+            pres_index = d.next_presentation++ % (int)d.gpu_presentations.size();
+            d.assignment[portrait] = pres_index;
             ++d.assigned;
         } else {
-            index = found->second;
+            pres_index = found->second;
         }
     }
-    Impl::GpuSlot& gs = d.gpu_slots[index];
+    Presentation& pr = *d.gpu_presentations[pres_index];
+    Impl::GpuSlot& gs = d.gpu_slots[pr.slot];
     Character& character = *gs.slot->character;
     if (!gs.gpu) {
         std::string err;
@@ -369,7 +443,7 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
         ++d.serial;
     }
     // where the GUI mirrors the portrait the picture is drawn flipped, so that it comes out the right way round
-    const bool flip = gs.slot->unmirror && PortraitMirrored(portrait);
+    const bool flip = pr.unmirror && PortraitMirrored(portrait);
     if (flip) {
         char id[96];
         snprintf(id, sizeof id, "%s flipped", key);
@@ -377,13 +451,24 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
     }
 
     // a click on this portrait starts one of its touch motions
-    if (interactions && gs.slot->click.enabled && ConsumeClick(portrait)) {
-        const ClickAction& click = gs.slot->click;
+    if (interactions && pr.click.enabled && ConsumeClick(portrait)) {
+        const ClickAction& click = pr.click;
         const bool ok = character.PlayMotionFrom(click.motion_groups, click.motion_index);
-        // the line to say: one of the mod's `sounds`, else the Sound of the motion that started
+        // the line to say: the mod's entry for the motion's group (exact name first, then prefix patterns), else one of its `sounds`, else
+        // the Sound that model3.json gives the motion. Several lines are taken in turn, so one is not repeated at once.
         std::filesystem::path line;
-        static uint32_t next_line = 0;  // the mod's lines in turn, so one is not repeated at once
-        if (!click.sounds.empty()) line = click.sounds[next_line++ % click.sounds.size()];
+        int bound = -1;
+        if (ok) {
+            const std::string& group = character.last_motion_group();
+            for (size_t i = 0; i < click.voices.size() && bound < 0; ++i)
+                if (click.voices[i].pattern == group) bound = (int)i;
+            for (size_t i = 0; i < click.voices.size() && bound < 0; ++i) {
+                const std::string& pat = click.voices[i].pattern;
+                if (!pat.empty() && pat.back() == '*' && group.rfind(pat.substr(0, pat.size() - 1), 0) == 0) bound = (int)i;
+            }
+        }
+        if (bound >= 0) line = click.voices[bound].lines[pr.voice_next[bound]++ % click.voices[bound].lines.size()];
+        else if (!click.sounds.empty()) line = click.sounds[pr.sound_next++ % click.sounds.size()];
         else if (ok) line = character.last_motion_sound();
         bool said = false;
         if (audio && !line.empty()) said = Voice::Get().Play(gs.slot.get(), line, click.volume);
@@ -395,12 +480,12 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
         // the look target: where the mouse pointer is, seen from this portrait (or from the middle of the window when the
         // portrait's place on the screen is not known); back to the middle while the game is not the foreground window
         float lx = 0.0f, ly = 0.0f;
-        const bool follow = interactions && gs.slot->follow.enabled;
+        const bool follow = interactions && pr.follow.enabled;
         if (follow) {
             ComputeLookTarget(portrait, &lx, &ly);
             if (flip) lx = -lx;  // the picture is flipped back: no allowance for the GUI's mirror
         }
-        character.SetLookTarget(lx, ly, follow ? gs.slot->follow.strength : 0.0f);
+        character.SetLookTarget(lx, ly, follow ? pr.follow.strength : 0.0f);
         const uint64_t t0 = Ticks();
         character.Tick((float)step);
         d.tick_ticks += Ticks() - t0;
@@ -408,9 +493,10 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
         ++d.ticks;
     }
 
-    // frames are kept per flip, because a model can be shown mirrored and not mirrored at the same time
+    // frames are kept per presentation (its view differs) and per flip, because a model can be shown mirrored and not mirrored at once
     const uint64_t frame_key = ((uint64_t)desc.Width << 40) | ((uint64_t)desc.Height << 16) | ((uint64_t)(flip ? 1 : 0) << 15) | (uint64_t)desc.Format;
-    Frame& f = gs.frames[frame_key];
+    const std::pair<int, uint64_t> frame_id(pres_index, frame_key);
+    Frame& f = gs.frames[frame_id];
     if (!f.texture) {
         D3D11_TEXTURE2D_DESC td = desc;
         td.MipLevels = 1;
@@ -422,7 +508,7 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
         td.CPUAccessFlags = 0;
         td.MiscFlags = 0;
         if (FAILED(dev->CreateTexture2D(&td, nullptr, &f.texture)) || FAILED(dev->CreateRenderTargetView(f.texture.Get(), nullptr, &f.rtv))) {
-            gs.frames.erase(frame_key);
+            gs.frames.erase(frame_id);
             ++d.failures;
             return PaintResult::Failed;
         }
@@ -432,7 +518,7 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
     dev->GetImmediateContext(&immediate);
     if (f.serial != d.serial) {
         const uint64_t t0 = Ticks();
-        View view = gs.slot->view;
+        View view = pr.view;
         view.flip_x = flip;
         d.renderer->Draw(d.deferred.Get(), *gs.gpu, character.model(), f.rtv.Get(), desc.Width, desc.Height, view);
         ComPtr<ID3D11CommandList> list;
@@ -459,6 +545,7 @@ void Live2DPainter::Shutdown() {
     d.ResetGpu();
     std::lock_guard<std::mutex> lock(d.mutex);
     d.slots.clear();  // models before the library that made them
+    d.presentations.clear();
     d.by_key.clear();
     d.api.reset();
     d.loaded_core.clear();

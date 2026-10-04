@@ -91,6 +91,15 @@ public:
     // reaches the waist of a standing figure). A rough heuristic for models without a hand-made view; call after Update().
     void SuggestPortraitView(float* center_x, float* center_y, float* height, float body_fraction = 0.46f) const;
 
+    // The measurements SuggestPortraitView works from, so they can be taken once (while nobody else uses the model) and turned into views
+    // later with any body fraction: the top and bottom of the picture and the horizontal centre of its top third, canvas fractions, y up.
+    struct PortraitBounds {
+        bool valid = false;
+        float top = 0, bottom = 0, center_x = 0.5f;
+    };
+    PortraitBounds MeasurePortrait() const;
+    static void ViewFromBounds(const PortraitBounds& b, float body_fraction, float* center_x, float* center_y, float* height);
+
 private:
     const core::Api* api_ = nullptr;
     void* moc_memory_ = nullptr;
