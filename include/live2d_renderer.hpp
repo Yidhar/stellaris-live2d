@@ -29,6 +29,11 @@ public:
 
     bool Init(ID3D11Device* device, std::string* error);
 
+    // Supersampling for what Draw renders: 2 draws at twice the width and height and averages 2x2 pixels into the output, which keeps the
+    // fine lines of the art that the picture's own size loses (1 = off, the default). Costs four times the pixels; multisampling was tried
+    // and does nothing here, the edges of the art are in the textures' alpha, not in the meshes.
+    void SetSupersample(int factor);
+
     // The GPU side of one model: textures with mip chains, indices, a dynamic vertex buffer, a mask target.
     class Gpu;
     struct GpuDeleter { void operator()(Gpu* gpu) const; };  // defined with Gpu, so callers need not see it

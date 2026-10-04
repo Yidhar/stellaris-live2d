@@ -60,6 +60,7 @@ int main(int argc, char** argv) {
     UINT width = 575, height = 380;
     int frames = 300;
     bool physics = true;
+    int supersample = 1;
     std::vector<int> counts = { 1, 2, 4, 6, 8, 12, 16 };
     std::vector<std::string> model_args;
     for (int i = 1; i < argc; ++i) {
@@ -69,6 +70,7 @@ int main(int argc, char** argv) {
         else if (a == "--size") sscanf(next().c_str(), "%ux%u", &width, &height);
         else if (a == "--frames") frames = atoi(next().c_str());
         else if (a == "--no-physics") physics = false;
+        else if (a == "--supersample") supersample = atoi(next().c_str());
         else if (a == "--model") model_args.push_back(next());
         else if (a == "--counts") {
             counts.clear();
@@ -101,6 +103,7 @@ int main(int argc, char** argv) {
     }
     l2d::Renderer renderer;
     if (!renderer.Init(dev.Get(), &err)) { fprintf(stderr, "renderer: %s\n", err.c_str()); return 1; }
+    renderer.SetSupersample(supersample);
     ComPtr<ID3D11DeviceContext> deferred;
     dev->CreateDeferredContext(0, &deferred);
 

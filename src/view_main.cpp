@@ -29,6 +29,7 @@ int main(int argc, char** argv) {
     float play_time = 0.0f;
     bool physics = true;
     bool auto_view = false;
+    int supersample = 1;
     float auto_body = 0.46f;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -43,6 +44,7 @@ int main(int argc, char** argv) {
             else sscanf(v.c_str(), "%f,%f,%f", &view.center_x, &view.center_y, &view.height);
         }
         else if (a == "--no-physics") physics = false;
+        else if (a == "--supersample") supersample = atoi(next().c_str());
         else if (a == "--motion") motion_group = next();
         else if (a == "--time") play_time = (float)atof(next().c_str());
         else if (a == "--param") {
@@ -95,6 +97,7 @@ int main(int argc, char** argv) {
     }
     l2d::Renderer renderer;
     if (!renderer.Init(dev.Get(), &err)) { fprintf(stderr, "renderer: %s\n", err.c_str()); return 1; }
+    renderer.SetSupersample(supersample);
     auto gpu = renderer.CreateModel(model, &err);
     if (!gpu) { fprintf(stderr, "gpu: %s\n", err.c_str()); return 1; }
 

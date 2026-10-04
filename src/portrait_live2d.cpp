@@ -196,6 +196,7 @@ struct Live2DPainter::Impl {
     bool physics = true;
     bool interactions = true;
     bool audio = true;
+    int supersample = 2;
     std::string loaded_core;
     std::string loaded_signature;                // what the slots were made from, to see when that changes
     std::unordered_map<std::string, int> by_key; // portrait key -> presentation, when the mods register portraits
@@ -480,6 +481,7 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         d.fps = s.fps < 1 ? 1 : s.fps > 120 ? 120 : s.fps;
         d.interactions = s.interactions;
         d.audio = s.audio;
+        d.supersample = s.supersample;
         d.budget = s.model_cache_mb > 0 ? (size_t)s.model_cache_mb << 20 : (size_t)-1;
         if (d.physics != s.physics) {
             d.physics = s.physics;
@@ -581,13 +583,14 @@ bool Live2DPainter::Ready() const {
 
 PaintResult Live2DPainter::Paint(const void* portrait, const char* key, int kind, ID3D11Texture2D* target, const D3D11_TEXTURE2D_DESC& desc) {
     Impl& d = *impl_;
-    int fps;
+    int fps, supersample;
     bool interactions, audio;
     {
         std::lock_guard<std::mutex> lock(d.mutex);
         fps = d.fps;
         interactions = d.interactions;
         audio = d.audio;
+        supersample = d.supersample;
         if (d.slots.empty() || d.presentations.empty()) return PaintResult::Skipped;
         if (d.generation != d.gpu_generation) {
             // the set of models or presentations changed: a model that stayed keeps its GPU resources, new ones get theirs when first used
@@ -887,6 +890,7 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, int kind
         const uint64_t t0 = Ticks();
         View view = variant.view;
         view.flip_x = flip;
+        d.renderer->SetSupersample(supersample);
         d.renderer->Draw(d.deferred.Get(), *loaded->gpu, character.model(), f.rtv.Get(), desc.Width, desc.Height, view);
         ComPtr<ID3D11CommandList> list;
         if (FAILED(d.deferred->FinishCommandList(FALSE, &list))) {

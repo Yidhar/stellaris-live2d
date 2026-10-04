@@ -69,6 +69,14 @@ portraits = {
 | `live2d_unmirror` | the GUI mirrors some portraits (the council does for some slots), which reverses text and logos in a model. With this on (the default) the plugin draws the picture flipped in those portraits, so the GUI's mirror turns it back; the mouse follow accounts for it |
 | `live2d_actions.mouse_follow` | the model looks towards the mouse pointer (`strength` 0..1): head turn (`ParamAngleX/Y/Z`), a little body lean (`ParamBodyAngleX`) and the eyes (`ParamEyeBallX/Y`), the values Cubism's own samples drive for a drag, eased over about 0.15 s and added on top of the motion every frame. Back to the middle while the game is not the foreground window. The ini key `interactions=0` turns all interactions and events off |
 
+### What every model gets
+
+For parameters no playing motion keys itself (a model whose idle loop keys them, like the test models, is left alone): Cubism's default
+**breath** (head, body lean and `ParamBreath`), an **eye blink** for the parameters of the model's `EyeBlink` group (`model3.json` `Groups`),
+and the **mouth** of the `LipSync` group opening with the loudness of the voice line the model is saying. Pictures are drawn at twice the
+size and averaged down (ini `supersample`, default 2): measured against a 4x render it is within 51 dB where the plain picture is at 36
+(multisampling was tried and changes under 0.1% of the pixels: the art's edges are texture alpha, not mesh edges).
+
 ### Loading
 
 Models are loaded on a background thread, never on the game's render thread, and their textures go to the GPU there too (the pixel
@@ -105,9 +113,9 @@ Each action may have:
 WAV, MP3, FLAC and Ogg Vorbis lines are played (not Opus or AAC); a new line cuts off the portrait's previous one. The ini keys `audio`
 (default 1) and `volume` (default 0.8) switch the voice off and set the master volume.
 
-**Status:** registration, model loading, drawing, `mouse_follow`, `live2d_unmirror`, `live2d_scale` and the events above are implemented.
-Not yet: Spine; a `greeting` event for the engine's own greeting sound; poses (`pose3.json`: no test model has one); the eye blink,
-breath and lip sync groups; an interactive drag (not wanted).
+**Status:** registration, background loading, drawing, supersampling, `mouse_follow`, `live2d_unmirror`, `live2d_scale`, the per-kind
+views, the events above, expressions, hit areas, breath, blink and lip sync are implemented. Not yet: Spine; a `greeting` event for the
+engine's own greeting sound; poses (`pose3.json`: no test model has one); the voice following the game's volume settings.
 
 ## Making a mod
 

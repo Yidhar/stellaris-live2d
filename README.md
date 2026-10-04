@@ -70,6 +70,7 @@ You need a Cubism Core library and a model. Neither is included.
 | `only_width`, `only_height` | `0` | only portraits whose render target has exactly this size (`0` = every size); the game's character portraits are 575×380 |
 | `view_x`, `view_y`, `view_h` | `0.44`, `0.19`, `0.26` | the part of the model canvas shown: centre from the left, centre from the top, and height, as fractions of the canvas |
 | `model_cache_mb` | `512` | memory the loaded models may take: within it all models are loaded in advance (in the background), beyond it on demand, dropping the one unused longest |
+| `supersample` | `2` | `2` draws the models at twice the size and averages down (crisper fine lines, costs little); `1` is off |
 | `fps` | `30` | how often the model is advanced and redrawn |
 | `physics` | `1` | secondary motion from the model's `physics3.json` |
 | `test_pattern` | `0` | paint a test pattern instead (a check that the hook works) |

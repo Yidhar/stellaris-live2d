@@ -43,6 +43,18 @@ float4 PS(VSOut i) : SV_Target {
     return c;
 }
 
+struct FullOut { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; };
+FullOut VSFull(uint id : SV_VertexID) {                      // one triangle over the whole target
+    FullOut o;
+    const float2 uv = float2((id << 1) & 2, id & 2);
+    o.pos = float4(uv * float2(2, -2) + float2(-1, 1), 0, 1);
+    o.uv = uv;
+    return o;
+}
+float4 PSDown(FullOut i) : SV_Target {                       // each output pixel is the middle of 2x2 source pixels: one bilinear tap averages them
+    return g_tex.Sample(g_samp, i.uv);
+}
+
 float4 PSMask(VSOut i) : SV_Target {
     float a = g_tex.Sample(g_samp, i.uv).a;
     return float4(a, a, a, a);                                 // accumulated additively into the R8 mask target
@@ -58,13 +70,16 @@ struct DrawCB { float base[4]; float multiply[4]; float screen[4]; float mask_mo
 struct Renderer::Impl {
     ComPtr<ID3D11Device> device;
     ComPtr<ID3D11VertexShader> vs;
-    ComPtr<ID3D11PixelShader> ps, ps_mask;
+    ComPtr<ID3D11VertexShader> vs_full;
+    ComPtr<ID3D11PixelShader> ps, ps_mask, ps_down;
+    ComPtr<ID3D11BlendState> blend_opaque;
     ComPtr<ID3D11InputLayout> layout;
     ComPtr<ID3D11BlendState> blend_normal, blend_add, blend_multiply, blend_mask;
     ComPtr<ID3D11RasterizerState> raster;
     ComPtr<ID3D11DepthStencilState> depth;
     ComPtr<ID3D11SamplerState> sampler;
     ComPtr<ID3D11Buffer> frame_cb, draw_cb;
+    int supersample = 1;
 };
 
 class Renderer::Gpu {
@@ -78,12 +93,20 @@ public:
     ComPtr<ID3D11Texture2D> mask_tex;
     ComPtr<ID3D11RenderTargetView> mask_rtv;
     ComPtr<ID3D11ShaderResourceView> mask_srv;
+    // the target Draw renders into at twice the size when supersampling is on, for the size and format it was made for
+    ComPtr<ID3D11Texture2D> ss_tex;
+    ComPtr<ID3D11RenderTargetView> ss_rtv;
+    ComPtr<ID3D11ShaderResourceView> ss_srv;
+    UINT ss_w = 0, ss_h = 0;
+    DXGI_FORMAT ss_format = DXGI_FORMAT_UNKNOWN;
 };
 
 void Renderer::GpuDeleter::operator()(Gpu* gpu) const { delete gpu; }
 
 Renderer::Renderer() : impl_(new Impl) {}
 Renderer::~Renderer() = default;
+
+void Renderer::SetSupersample(int factor) { impl_->supersample = factor >= 2 ? 2 : 1; }
 
 bool Renderer::Init(ID3D11Device* device, std::string* error) {
     auto fail = [&](const std::string& m) {
@@ -93,17 +116,21 @@ bool Renderer::Init(ID3D11Device* device, std::string* error) {
     Impl& d = *impl_;
     d.device = device;
 
-    ComPtr<ID3DBlob> vs_blob, ps_blob, psm_blob, err;
+    ComPtr<ID3DBlob> vs_blob, ps_blob, psm_blob, vsf_blob, psd_blob, err;
     auto compile = [&](const char* entry, const char* target, ComPtr<ID3DBlob>& out) {
         err.Reset();
         const HRESULT hr = D3DCompile(kShader, strlen(kShader), "live2d.hlsl", nullptr, nullptr, entry, target, D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &out, &err);
         if (FAILED(hr)) return fail(std::string("shader compile failed: ") + (err ? (const char*)err->GetBufferPointer() : "?"));
         return true;
     };
-    if (!compile("VS", "vs_5_0", vs_blob) || !compile("PS", "ps_5_0", ps_blob) || !compile("PSMask", "ps_5_0", psm_blob)) return false;
+    if (!compile("VS", "vs_5_0", vs_blob) || !compile("PS", "ps_5_0", ps_blob) || !compile("PSMask", "ps_5_0", psm_blob) ||
+        !compile("VSFull", "vs_5_0", vsf_blob) || !compile("PSDown", "ps_5_0", psd_blob))
+        return false;
     if (FAILED(device->CreateVertexShader(vs_blob->GetBufferPointer(), vs_blob->GetBufferSize(), nullptr, &d.vs)) ||
         FAILED(device->CreatePixelShader(ps_blob->GetBufferPointer(), ps_blob->GetBufferSize(), nullptr, &d.ps)) ||
-        FAILED(device->CreatePixelShader(psm_blob->GetBufferPointer(), psm_blob->GetBufferSize(), nullptr, &d.ps_mask)))
+        FAILED(device->CreatePixelShader(psm_blob->GetBufferPointer(), psm_blob->GetBufferSize(), nullptr, &d.ps_mask)) ||
+        FAILED(device->CreateVertexShader(vsf_blob->GetBufferPointer(), vsf_blob->GetBufferSize(), nullptr, &d.vs_full)) ||
+        FAILED(device->CreatePixelShader(psd_blob->GetBufferPointer(), psd_blob->GetBufferSize(), nullptr, &d.ps_down)))
         return fail("could not create the shaders");
     const D3D11_INPUT_ELEMENT_DESC elems[] = {
         { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
@@ -130,6 +157,12 @@ bool Renderer::Init(ID3D11Device* device, std::string* error) {
         !make_blend(D3D11_BLEND_ONE, D3D11_BLEND_ONE, D3D11_BLEND_ONE, D3D11_BLEND_ONE, d.blend_mask))
         return fail("could not create the blend states");
 
+    {
+        D3D11_BLEND_DESC b = {};
+        b.RenderTarget[0].BlendEnable = FALSE;
+        b.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+        if (FAILED(device->CreateBlendState(&b, &d.blend_opaque))) return fail("could not create the blend state");
+    }
     D3D11_RASTERIZER_DESC r = {};
     r.FillMode = D3D11_FILL_SOLID;
     r.CullMode = D3D11_CULL_NONE;
@@ -229,12 +262,41 @@ void Renderer::Draw(ID3D11DeviceContext* ctx, Gpu& gpu, const Model& model, ID3D
     const core::Api& api = model.api();
     core::Model* m = model.handle();
     const int n = model.drawable_count;
+    // with supersampling everything is drawn at twice the size and averaged down into `target` at the end
+    const UINT ss = (UINT)d.supersample;
+    const UINT W = width * ss, H = height * ss;
+    ID3D11RenderTargetView* out = target;
+    ComPtr<ID3D11Resource> target_resource;
+    if (ss > 1) {
+        target->GetResource(&target_resource);
+        ComPtr<ID3D11Texture2D> target_texture;
+        D3D11_TEXTURE2D_DESC td = {};
+        if (target_resource && SUCCEEDED(target_resource.As(&target_texture))) target_texture->GetDesc(&td);
+        if (td.Format != DXGI_FORMAT_UNKNOWN) {
+            if (!gpu.ss_rtv || gpu.ss_w != W || gpu.ss_h != H || gpu.ss_format != td.Format) {
+                gpu.ss_tex.Reset(); gpu.ss_rtv.Reset(); gpu.ss_srv.Reset();
+                D3D11_TEXTURE2D_DESC sd = {};
+                sd.Width = W; sd.Height = H; sd.MipLevels = 1; sd.ArraySize = 1;
+                sd.Format = td.Format;
+                sd.SampleDesc.Count = 1;
+                sd.Usage = D3D11_USAGE_DEFAULT;
+                sd.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+                if (SUCCEEDED(d.device->CreateTexture2D(&sd, nullptr, &gpu.ss_tex))) {
+                    d.device->CreateRenderTargetView(gpu.ss_tex.Get(), nullptr, &gpu.ss_rtv);
+                    d.device->CreateShaderResourceView(gpu.ss_tex.Get(), nullptr, &gpu.ss_srv);
+                }
+                gpu.ss_w = W; gpu.ss_h = H; gpu.ss_format = td.Format;
+            }
+            if (gpu.ss_rtv && gpu.ss_srv) out = gpu.ss_rtv.Get();
+        }
+    }
+    const bool downsample = out != target;
 
-    // the mask target follows the output size
-    if (gpu.mask_w != width || gpu.mask_h != height) {
+    // the mask target follows the size the model is drawn at
+    if (gpu.mask_w != W || gpu.mask_h != H) {
         gpu.mask_tex.Reset(); gpu.mask_rtv.Reset(); gpu.mask_srv.Reset();
         D3D11_TEXTURE2D_DESC td = {};
-        td.Width = width; td.Height = height; td.MipLevels = 1; td.ArraySize = 1;
+        td.Width = W; td.Height = H; td.MipLevels = 1; td.ArraySize = 1;
         td.Format = DXGI_FORMAT_R8_UNORM;
         td.SampleDesc.Count = 1;
         td.Usage = D3D11_USAGE_DEFAULT;
@@ -243,7 +305,7 @@ void Renderer::Draw(ID3D11DeviceContext* ctx, Gpu& gpu, const Model& model, ID3D
             d.device->CreateRenderTargetView(gpu.mask_tex.Get(), nullptr, &gpu.mask_rtv);
             d.device->CreateShaderResourceView(gpu.mask_tex.Get(), nullptr, &gpu.mask_srv);
         }
-        gpu.mask_w = width; gpu.mask_h = height;
+        gpu.mask_w = W; gpu.mask_h = H;
     }
 
     // vertices for this frame
@@ -311,11 +373,11 @@ void Renderer::Draw(ID3D11DeviceContext* ctx, Gpu& gpu, const Model& model, ID3D
     ctx->PSSetSamplers(0, 1, &samp);
     ctx->RSSetState(d.raster.Get());
     ctx->OMSetDepthStencilState(d.depth.Get(), 0);
-    D3D11_VIEWPORT vp = { 0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f };
+    D3D11_VIEWPORT vp = { 0.0f, 0.0f, (float)(downsample ? W : width), (float)(downsample ? H : height), 0.0f, 1.0f };
     ctx->RSSetViewports(1, &vp);
     const float clear[4] = { 0, 0, 0, 0 };
-    ctx->OMSetRenderTargets(1, &target, nullptr);
-    ctx->ClearRenderTargetView(target, clear);
+    ctx->OMSetRenderTargets(1, &out, nullptr);
+    ctx->ClearRenderTargetView(out, clear);
     ID3D11ShaderResourceView* null_srv[2] = { nullptr, nullptr };
 
     auto set_draw_cb = [&](const float base[4], const core::Vec4* mul, const core::Vec4* scr, float mask_mode) {
@@ -358,7 +420,7 @@ void Renderer::Draw(ID3D11DeviceContext* ctx, Gpu& gpu, const Model& model, ID3D
                 for (int mi : want) {
                     if (mi >= 0 && mi < n && icounts[mi]) draw_mesh(mi);
                 }
-                ctx->OMSetRenderTargets(1, &target, nullptr);
+                ctx->OMSetRenderTargets(1, &out, nullptr);
                 current_mask = std::move(want);
                 mask_valid = true;
             }
@@ -377,6 +439,20 @@ void Renderer::Draw(ID3D11DeviceContext* ctx, Gpu& gpu, const Model& model, ID3D
         draw_mesh(i);
     }
     ctx->PSSetShaderResources(0, 2, null_srv);
+    if (downsample) {  // average 2x2 pixels of the big picture into each pixel of the output, replacing what is there
+        ctx->OMSetRenderTargets(1, &target, nullptr);
+        D3D11_VIEWPORT out_vp = { 0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f };
+        ctx->RSSetViewports(1, &out_vp);
+        ctx->IASetInputLayout(nullptr);
+        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        ctx->VSSetShader(d.vs_full.Get(), nullptr, 0);
+        ctx->PSSetShader(d.ps_down.Get(), nullptr, 0);
+        ctx->OMSetBlendState(d.blend_opaque.Get(), nullptr, 0xFFFFFFFF);
+        ID3D11ShaderResourceView* big = gpu.ss_srv.Get();
+        ctx->PSSetShaderResources(0, 1, &big);
+        ctx->Draw(3, 0);
+        ctx->PSSetShaderResources(0, 1, null_srv);
+    }
 }
 
 } // namespace l2d

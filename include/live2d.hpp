@@ -34,6 +34,7 @@ struct Settings {
     };
     std::vector<ModelEntry> models;
     std::vector<std::string> extra_mod_dirs;  // mod root folders read as if they were enabled (development)
+    int supersample = 2;       // 2: the models are drawn at twice the size and averaged down (crisper fine lines); 1: at the picture's size
     int model_cache_mb = 512;  // memory the loaded models may take (0 = no limit): within it every model is loaded in advance, beyond it
                                // on demand, and the model unused for longest is dropped to make room
     bool audio = true;     // play the voice lines of motions started by interactions
