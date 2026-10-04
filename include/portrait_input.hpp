@@ -50,6 +50,11 @@ void QueuePortraitEvent(const void* portrait, PortraitEvent::Type type);
 // Whether the game window is the foreground window.
 bool GameWindowInFront();
 
+// The size of the game window's client area in pixels (false while it is minimized), and the pointer in it (false unless the game is in front
+// and the pointer is inside): for the plugin's self-test.
+bool GameClientSize(int* width, int* height);
+bool ClientPointer(float* x, float* y, float* width, float* height);
+
 // The oldest event waiting for this portrait (events older than half a second are dropped); false when there is none.
 bool PopPortraitEvent(const void* portrait, PortraitEvent* out);
 

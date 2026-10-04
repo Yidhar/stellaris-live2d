@@ -171,6 +171,20 @@ void EnsureSubclass() {
 
 void QueuePortraitEvent(const void* portrait, PortraitEvent::Type type) { Queue(portrait, type, 0.5f, 0.5f); }
 
+bool GameClientSize(int* width, int* height) {
+    HWND hwnd = GameWindow();
+    RECT r;
+    if (!hwnd || !GetClientRect(hwnd, &r) || r.right <= 0 || r.bottom <= 0) return false;
+    *width = r.right;
+    *height = r.bottom;
+    return true;
+}
+
+bool ClientPointer(float* x, float* y, float* width, float* height) {
+    if (!MouseInGameWindow(x, y, width, height)) return false;
+    return *x >= 0 && *y >= 0 && *x < *width && *y < *height;
+}
+
 bool GameWindowInFront() {
     HWND hwnd = GameWindow();
     return hwnd && GetForegroundWindow() == hwnd;

@@ -26,6 +26,8 @@
 
 namespace l2d {
 
+float GameVolume(const std::string& channel);  // defined below, outside the unnamed namespace
+
 // ---- log -----------------------------------------------------------------------------------------------------
 
 namespace {
@@ -387,6 +389,69 @@ void LogFrameOnce(void* portrait, const PortraitFrame& f) {
         f.has_mouse ? "" : "unknown ", f.mouse_x, f.mouse_y);
 }
 
+// What the exe cannot confirm without live objects, checked once the first portrait is on screen and written to the log as `selftest:` lines
+// (tools/live_verify.py reads them): the portrait key and kind, the rectangle, the window and GUI sizes against the real window, the game's volumes,
+// and, once the game window is in front with the pointer inside it, the pointer the engine reports against the one the system reports.
+bool ReadGuiSizes(void* gui, int* w, int* h, int* gw, int* gh) {
+    __try {
+        const auto* g = (const uint8_t*)gui;
+        *w = *(const int*)(g + sdk::rt::CGuiGraphics_width);
+        *h = *(const int*)(g + sdk::rt::CGuiGraphics_height);
+        *gw = *(const int*)(g + sdk::rt::CGuiGraphics_gui_width);
+        *gh = *(const int*)(g + sdk::rt::CGuiGraphics_gui_height);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+void SelfTest(void* portrait, const PortraitFrame& f) {
+    static bool basic = false, pointer = false;
+    if (basic && pointer) return;
+    void* gui = g_gui_graphics.load();
+    if (!gui) return;
+    if (!basic && f.has_rect) {
+        basic = true;
+        int pass = 0, fail = 0;
+        auto report = [&](const char* name, bool ok, const char* detail) {
+            Log("selftest: %-9s %s  %s", name, ok ? "PASS" : "FAIL", detail);
+            ++(ok ? pass : fail);
+        };
+        char detail[200], key[96];
+        ReadPortraitKey((const uint8_t*)portrait, key, sizeof key);
+        report("key", key[0] != 0, key);
+        const int kind = ReadPortraitKind((const uint8_t*)portrait);
+        snprintf(detail, sizeof detail, "kind %d", kind);
+        report("kind", kind >= 0 && kind <= 5, detail);
+        int w = 0, h = 0, gw = 0, gh = 0;
+        const bool sized = ReadGuiSizes(gui, &w, &h, &gw, &gh);
+        const ScreenRect& r = f.rect;
+        snprintf(detail, sizeof detail, "x %.0f y %.0f %.0fx%.0f in a GUI of %dx%d", r.x, r.y, r.w, r.h, gw, gh);
+        report("rect", sized && r.w >= 4 && r.h >= 4 && r.w <= gw && r.h <= gh && r.x > -gw && r.x < gw && r.y > -gh && r.y < gh, detail);
+        int cw = 0, ch = 0;
+        if (sized && GameClientSize(&cw, &ch)) {
+            snprintf(detail, sizeof detail, "window %dx%d px (client %dx%d), GUI %dx%d units, UI scale %.2f", w, h, cw, ch, gw, gh, gw ? (double)w / gw : 0.0);
+            report("sizes", std::abs(w - cw) <= 1 && std::abs(h - ch) <= 1 && gw > 0 && gw <= w && w <= gw * 2 && std::abs((double)w / gw - (double)h / gh) < 0.02, detail);
+        } else {
+            Log("selftest: sizes     SKIP  the game window is minimized");
+        }
+        const float voice = GameVolume("voice"), effects = GameVolume("effects");
+        snprintf(detail, sizeof detail, "voice %.3f, effects %.3f", voice, effects);
+        report("volumes", voice >= 0.0f && effects >= 0.0f, detail);
+        Log("selftest: %d passed, %d failed (the pointer check follows once the game window is in front with the pointer inside it)", pass, fail);
+    }
+    if (basic && !pointer && f.has_mouse && f.gui_w > 0) {
+        float px, py, cw, ch;
+        if (ClientPointer(&px, &py, &cw, &ch)) {
+            pointer = true;
+            const float scale = cw / f.gui_w;
+            const bool ok = std::fabs(f.mouse_x * scale - px) <= 3.0f && std::fabs(f.mouse_y * (ch / f.gui_h) - py) <= 3.0f;
+            Log("selftest: pointer   %s  the engine says (%.0f, %.0f) GUI units = (%.0f, %.0f) px, the system says (%.0f, %.0f) px", ok ? "PASS" : "FAIL", f.mouse_x, f.mouse_y,
+                f.mouse_x * scale, f.mouse_y * (ch / f.gui_h), px, py);
+        }
+    }
+}
+
 void UpdatePortraitDetour(void* portrait, void* graphics, void* context) {
     g_in_hook.fetch_add(1);
     // the engine re-renders a portrait only while this flag is set (it clears it itself)
@@ -397,6 +462,7 @@ void UpdatePortraitDetour(void* portrait, void* graphics, void* context) {
         BuildPortraitFrame(portrait, &frame);
         SetPortraitFrame(frame);
         LogFrameOnce(portrait, frame);
+        SelfTest(portrait, frame);
     }
     g_orig_update(portrait, graphics, context);
     ++g_calls;

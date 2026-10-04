@@ -135,7 +135,16 @@ cmake --build build --config Release        # build\Release\stellaris_live2d.dll
 ```
 
 The DLL only works with the `stellaris.exe` its SDK was located in (checked at load time; with any other build it logs the
-mismatch and installs nothing). After a game patch: `pip install pefile capstone`, `python tools/locate.py`, rebuild.
+mismatch and installs nothing). After a game patch: `pip install pefile capstone`, `python tools/locate.py`, rebuild, then check:
+
+- `python tools/validate.py`: the locator still finds what the header says, every value that was verified by hand or in the game is
+  unchanged, and the layout invariants hold; it says when the constants no fingerprint finds (the GUI object layout) were verified for
+  another build. This is what the main repo's SDK dumper does with its `validate.py`.
+- `python tools/live_verify.py` with the game running and a portrait on screen: the plugin checks the live objects itself (portrait key and
+  kind, the rectangle, the window and GUI sizes, the game's volumes, and the pointer once the game window is in front) and writes the result to
+  its log; this prints it.
+- `build\Release\l2d_tests.exe` (or `ctest -C Release` in `build`): offline checks of the script reader, the portrait registry, DDS reading,
+  mip chains and the framing maths.
 
 ## Plan
 
