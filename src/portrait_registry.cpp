@@ -63,6 +63,7 @@ void ReadEntry(const pdx::Node& e, const fs::path& root, const std::string& file
     p.key = e.key;
     p.live2d = e.Bool("live2d");
     p.spine = e.Bool("spine");
+    p.unmirror = e.Bool("live2d_unmirror", true);
     p.source = file + ":" + std::to_string(e.line);
     if (!p.live2d && !p.spine) return;
     const std::string model = e.Str(p.live2d ? "live2d_model" : "spine_model");
@@ -81,7 +82,8 @@ void ReadEntry(const pdx::Node& e, const fs::path& root, const std::string& file
     if (const pdx::Node* a = e.Find("live2d_actions"); a && a->block) {
         p.mouse_follow.enabled = Action(*a, "mouse_follow", [&](const pdx::Node& n) { p.mouse_follow.strength = (float)n.Num("strength", 1.0); });
         p.click.enabled = Action(*a, "click", [&](const pdx::Node& n) {
-            p.click.motion_group = n.Str("motion_group");
+            p.click.motion_groups = n.List("motion_groups");
+            if (!n.Str("motion_group").empty()) p.click.motion_groups.push_back(n.Str("motion_group"));
             p.click.motion_index = (int)n.Num("motion_index", -1);
             p.click.expression = n.Str("expression");
         });

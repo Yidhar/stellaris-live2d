@@ -8,10 +8,11 @@
 //     live2d = yes                      draw the portrait as a Live2D model
 //     spine = yes                       ... or as a Spine skeleton (not implemented yet; the portrait stays as the game draws it)
 //     live2d_model = "gfx/live2d/x/x.model3.json"   path inside the mod
+//     live2d_unmirror = yes             (default) the GUI mirrors some portraits (the council does); the plugin draws them flipped
 //     live2d_view = { auto = yes  body = 0.46 }      or { x = 0.44  y = 0.19  height = 0.26 }, fractions of the model canvas
 //     live2d_actions = {
 //         mouse_follow = { enabled = yes  strength = 0.6 }
-//         click        = { enabled = yes  motion_group = "TapBody"  motion_index = -1  expression = "" }
+//         click        = { enabled = yes  motion_group = "touch*"  motion_index = -1 }   // or motion_groups = { a b c }
 //         drag         = { enabled = yes  strength = 1.0 }
 //         scale        = { enabled = yes  min = 0.8  max = 1.6 }
 //     }
@@ -24,13 +25,21 @@
 namespace l2d {
 
 struct MouseFollow { bool enabled = false; float strength = 1.0f; };
-struct ClickAction { bool enabled = false; std::string motion_group; int motion_index = -1; std::string expression; };
+struct ClickAction {
+    bool enabled = false;
+    // motion groups to pick from at random: `motion_group = "name"` or `motion_groups = { a b }`; a name ending in * matches every
+    // group that starts with the rest ("touch*": touch_1, touch_2, ...). The Idle group is never chosen by a pattern.
+    std::vector<std::string> motion_groups;
+    int motion_index = -1;      // -1: a random motion of the chosen group
+    std::string expression;     // read, not implemented yet
+};
 struct DragAction { bool enabled = false; float strength = 1.0f; };
 struct ScaleAction { bool enabled = false; float min = 0.5f, max = 2.0f; };
 
 struct PortraitEntry {
     std::string key;            // the portrait key (`human_female_01`), what the engine reports for a portrait object
     bool live2d = false, spine = false;
+    bool unmirror = true;       // draw the picture flipped where the GUI mirrors the portrait, so it comes out the right way round
     std::string model;          // absolute path of the model3.json
     bool auto_view = true;
     float auto_body = 0.46f;

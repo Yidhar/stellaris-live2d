@@ -41,12 +41,13 @@ register their key. The scan repeats when the playset or one of these files chan
 portraits = {
 	human_female_01 = {            # a key the game already has, or a new one the mod registered the usual way
 		live2d = yes               # draw it as a Live2D model
+		live2d_unmirror = yes      # (default) where the GUI mirrors the portrait, draw it flipped so it comes out the right way round
 		spine  = no                # or as a Spine skeleton (read, not drawn yet)
 		live2d_model = "gfx/live2d/pa15/model.model3.json"     # inside the mod
 		live2d_view = { auto = yes  body = 0.46 }               # or { x = 0.44  y = 0.19  height = 0.26 }
 		live2d_actions = {
 			mouse_follow = { enabled = yes  strength = 0.6 }
-			click        = { enabled = yes  motion_group = "TapBody"  motion_index = -1  expression = "" }
+			click        = { enabled = yes  motion_group = "touch*"  motion_index = -1 }   # or motion_groups = { touch_1 touch_2 }
 			drag         = { enabled = no   strength = 1.0 }
 			scale        = { enabled = yes  min = 0.8  max = 1.6 }
 		}
@@ -60,16 +61,17 @@ portraits = {
 | `live2d_model` | path of the `model3.json` relative to the mod root |
 | `live2d_view` | the part of the model canvas shown, as fractions of the canvas. `auto = yes` works it out from the model's geometry: it starts a little above the head and covers `body` (default `0.46`) of the figure's height. Otherwise `x`, `y` (centre from the left and from the top) and `height` |
 | `live2d_actions.mouse_follow` | the model looks towards the mouse pointer (`strength` 0..1): head turn (`ParamAngleX/Y/Z`), a little body lean (`ParamBodyAngleX`) and the eyes (`ParamEyeBallX/Y`), the values Cubism's own samples drive for a drag, eased over about 0.15 s and added on top of the motion every frame. Back to the middle while the game is not the foreground window. The ini key `interactions=0` turns all interactions off |
-| `live2d_actions.click` | clicking the portrait starts a motion from `motion_group` (`motion_index` -1 = random) and/or an expression |
+| `live2d_unmirror` | the GUI mirrors some portraits (the council does for some slots), which reverses text and logos in a model. With this on (the default) the plugin draws the picture flipped in those portraits, so the GUI's mirror turns it back; the mouse follow accounts for it |
+| `live2d_actions.click` | a left click that lands on the portrait (inside the rectangle the GUI draws it in and its clip area) starts a motion from one of the groups named by `motion_group` or `motion_groups`, picked at random but never the one played last; `motion_index` -1 = a random motion of the group. A name ending in `*` matches every group that starts with the rest (`touch*` = `touch_1`, `touch_2`, ..., never `Idle`). The click is not swallowed: a button the GUI draws over the portrait is pressed too. `expression` is read but not implemented |
 | `live2d_actions.drag` | dragging on the portrait moves the model's look/body parameters |
 | `live2d_actions.scale` | the mouse wheel over the portrait zooms between `min` and `max` |
 
 **Status:** the registration, model loading and drawing work (checked in the game with a mod that replaces the human
 portraits). `mouse_follow` works (checked in the game: the head and eyes of the large leader portrait follow the pointer to the
 four screen edges, and in the council with the pointer around the four portraits, where the mirrored ones turn the right way).
-The look target is the pointer relative to the portrait's own place on the screen. `click`, `drag` and `scale` are parsed and kept
-but not implemented; the screen rectangle each of them needs is known now (see engine-notes.md), what is missing is the mouse button
-and wheel input and a decision about the portrait list that scrolls.
+The look target is the pointer relative to the portrait's own place on the screen. `click` and `live2d_unmirror` are implemented
+(the click polls the left button once per frame, so a press shorter than a frame can be missed; a window drawn over the portrait does
+not stop the click from counting). `drag` and `scale` are parsed and kept but not implemented.
 
 ## Making a mod
 
@@ -86,6 +88,5 @@ and wheel input and a decision about the portrait list that scrolls.
 - Spine: nothing draws yet.
 - Binding on more than the key: per leader, per species, per screen (the object's scope and sprite type are available).
 - Interactions (above) and a way for events or scripts to trigger a motion or expression.
-- The council mirrors some slots (the engine's mirror flag, `+0xC8`), so text or logos in a model appear reversed there. The look
-  target already accounts for it; a way to un-mirror the picture (draw it flipped in the render target) is a candidate option.
+- Clicks do not know what the GUI has drawn over a portrait (a window, a tooltip); only the portrait's own clip area is respected.
 - Two portraits that share a model share its frame and its look target (the first one asked decides).

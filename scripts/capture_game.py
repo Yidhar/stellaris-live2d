@@ -1,4 +1,5 @@
-"""Saves a PNG of the game window's client area (the window must be visible and not covered). Usage: python capture_game.py out.png"""
+"""Saves a PNG of the game window's client area. The game window must be the foreground window: the grab is of the screen region
+where the window is, so a window in front of it would end up in the picture. Usage: python capture_game.py out.png"""
 import ctypes, ctypes.wintypes as w, sys
 from PIL import ImageGrab
 
@@ -30,6 +31,8 @@ def capture(out):
     hwnd = game_hwnd()
     if not hwnd:
         raise SystemExit("no visible window titled Stellaris")
+    if user32.GetForegroundWindow() != hwnd:
+        raise SystemExit("the game window is not in front; not capturing (the grab would show whatever covers it)")
     pt = w.POINT(0, 0)
     user32.ClientToScreen(hwnd, ctypes.byref(pt))
     c = w.RECT()

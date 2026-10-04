@@ -17,6 +17,7 @@ struct View {
     float center_x = 0.5f;  // from the left edge
     float center_y = 0.5f;  // from the top edge
     float height = 1.0f;    // of the canvas height; the width follows from the target's aspect ratio
+    bool flip_x = false;    // draw the picture mirrored left to right (for a portrait the GUI mirrors again)
 };
 
 class Renderer {

@@ -43,6 +43,8 @@ struct Slot {
     View view;
     std::string name;
     MouseFollow follow;
+    ClickAction click;
+    bool unmirror = true;
 };
 
 } // namespace
@@ -116,15 +118,19 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         float body, x, y, h;
         std::string actions;  // part of what makes two uses of one model different slots
         MouseFollow follow;
+        ClickAction click;
+        bool unmirror = true;
     };
     std::vector<Want> wants;
     std::unordered_map<std::string, int> by_key;
     for (const PortraitEntry& e : registry.entries) {
         if (!e.live2d) continue;  // spine entries are read but not drawn yet
         char id[256];
-        snprintf(id, sizeof id, "m%d f%.2f c%d:%s:%d d%d s%d", (int)e.mouse_follow.enabled, e.mouse_follow.strength, (int)e.click.enabled,
-                 e.click.motion_group.c_str(), e.click.motion_index, (int)e.drag.enabled, (int)e.scale.enabled);
-        Want w{ e.model, e.auto_view, e.auto_body, e.view_x, e.view_y, e.view_h, id, e.mouse_follow };
+        std::string groups;
+        for (const std::string& g : e.click.motion_groups) groups += g + ",";
+        snprintf(id, sizeof id, "m%d f%.2f c%d:%d u%d d%d s%d ", (int)e.mouse_follow.enabled, e.mouse_follow.strength, (int)e.click.enabled,
+                 e.click.motion_index, (int)e.unmirror, (int)e.drag.enabled, (int)e.scale.enabled);
+        Want w{ e.model, e.auto_view, e.auto_body, e.view_x, e.view_y, e.view_h, id + groups, e.mouse_follow, e.click, e.unmirror };
         int index = -1;
         for (size_t i = 0; i < wants.size(); ++i) {
             const Want& o = wants[i];
@@ -138,7 +144,7 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
     }
     const bool registry_mode = !wants.empty();
     if (!registry_mode) {
-        for (const Settings::ModelEntry& e : s.models) wants.push_back({ e.path, e.auto_view, e.auto_body, e.view_x, e.view_y, e.view_h, "", MouseFollow{} });
+        for (const Settings::ModelEntry& e : s.models) wants.push_back({ e.path, e.auto_view, e.auto_body, e.view_x, e.view_y, e.view_h, "", MouseFollow{}, ClickAction{}, false });
     }
     std::string signature = s.core_dll + (registry_mode ? "|registry" : "|list");
     for (const Want& w : wants) {
@@ -206,6 +212,8 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         slot->name = std::filesystem::path(w.path).parent_path().filename().string();
         slot->view = { w.x, w.y, w.h };
         slot->follow = w.follow;
+        slot->click = w.click;
+        slot->unmirror = w.unmirror;
         if (w.auto_view) character->model().SuggestPortraitView(&slot->view.center_x, &slot->view.center_y, &slot->view.height, w.body);
         const Model& m = character->model();
         Log("live2d: loaded %s in %.0f ms: canvas %.0fx%.0f, %d parameters, %d drawables, %zu textures (%.1f MB); view (%.3f, %.3f, %.3f)%s",
@@ -341,12 +349,29 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
         d.pending = d.serial == 0 ? 0.0 : std::min(d.pending - step, step * 2);
         ++d.serial;
     }
+    // where the GUI mirrors the portrait the picture is drawn flipped, so that it comes out the right way round
+    const bool flip = gs.slot->unmirror && PortraitMirrored(portrait);
+    if (flip) {
+        char id[96];
+        snprintf(id, sizeof id, "%s flipped", key);
+        if (d.seen.insert(id).second) Log("live2d: portrait %s is mirrored by the GUI; drawing %s flipped so it comes out the right way round", key, gs.slot->name.c_str());
+    }
+
+    // a click on this portrait starts one of its touch motions
+    if (interactions && gs.slot->click.enabled && ConsumeClick(portrait)) {
+        const bool ok = character.PlayMotionFrom(gs.slot->click.motion_groups, gs.slot->click.motion_index);
+        Log("live2d: click on portrait %s (%s) -> %s", key, gs.slot->name.c_str(), ok ? character.last_motion_group().c_str() : "no matching motion");
+    }
+
     if (gs.stepped != d.serial) {
         // the look target: where the mouse pointer is, seen from this portrait (or from the middle of the window when the
         // portrait's place on the screen is not known); back to the middle while the game is not the foreground window
         float lx = 0.0f, ly = 0.0f;
         const bool follow = interactions && gs.slot->follow.enabled;
-        if (follow) ComputeLookTarget(portrait, &lx, &ly);
+        if (follow) {
+            ComputeLookTarget(portrait, &lx, &ly);
+            if (flip) lx = -lx;  // the picture is flipped back: no allowance for the GUI's mirror
+        }
         character.SetLookTarget(lx, ly, follow ? gs.slot->follow.strength : 0.0f);
         const uint64_t t0 = Ticks();
         character.Tick((float)step);
@@ -355,7 +380,8 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
         ++d.ticks;
     }
 
-    const uint64_t frame_key = ((uint64_t)desc.Width << 40) | ((uint64_t)desc.Height << 16) | (uint64_t)desc.Format;
+    // frames are kept per flip, because a model can be shown mirrored and not mirrored at the same time
+    const uint64_t frame_key = ((uint64_t)desc.Width << 40) | ((uint64_t)desc.Height << 16) | ((uint64_t)(flip ? 1 : 0) << 15) | (uint64_t)desc.Format;
     Frame& f = gs.frames[frame_key];
     if (!f.texture) {
         D3D11_TEXTURE2D_DESC td = desc;
@@ -378,7 +404,9 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
     dev->GetImmediateContext(&immediate);
     if (f.serial != d.serial) {
         const uint64_t t0 = Ticks();
-        d.renderer->Draw(d.deferred.Get(), *gs.gpu, character.model(), f.rtv.Get(), desc.Width, desc.Height, gs.slot->view);
+        View view = gs.slot->view;
+        view.flip_x = flip;
+        d.renderer->Draw(d.deferred.Get(), *gs.gpu, character.model(), f.rtv.Get(), desc.Width, desc.Height, view);
         ComPtr<ID3D11CommandList> list;
         if (FAILED(d.deferred->FinishCommandList(FALSE, &list))) {
             ++d.failures;

@@ -18,6 +18,24 @@ bool Character::Load(const core::Api* api, const std::filesystem::path& model3_j
     return true;
 }
 
+bool Character::PlayMotionFrom(const std::vector<std::string>& patterns, int index) {
+    std::vector<std::string> groups;
+    for (const std::string& p : patterns) {
+        const bool prefix = !p.empty() && p.back() == '*';
+        const std::string stem = prefix ? p.substr(0, p.size() - 1) : p;
+        for (const auto& g : model_.motions) {
+            if (g.second.empty() || (prefix ? g.first.rfind(stem, 0) != 0 || g.first == "Idle" : g.first != stem)) continue;
+            if (std::find(groups.begin(), groups.end(), g.first) == groups.end()) groups.push_back(g.first);
+        }
+    }
+    if (groups.empty()) return false;
+    if (groups.size() > 1) groups.erase(std::remove(groups.begin(), groups.end(), last_group_), groups.end());
+    const std::string& group = groups[rng_() % groups.size()];
+    if (!PlayMotion(group, index)) return false;
+    last_group_ = group;
+    return true;
+}
+
 void Character::SetLookTarget(float x, float y, float weight) {
     look_target_x_ = std::clamp(x, -1.0f, 1.0f);
     look_target_y_ = std::clamp(y, -1.0f, 1.0f);

@@ -271,6 +271,10 @@ void Renderer::Draw(ID3D11DeviceContext* ctx, Gpu& gpu, const Model& model, ID3D
         f.scale[1] = (ppu / chh) / (vh * 0.5f);
         f.offset[0] = (model.canvas_origin.x / cw - cx) / (vw * 0.5f);
         f.offset[1] = (model.canvas_origin.y / chh - cy) / (vh * 0.5f);
+        if (view.flip_x) {  // mirror around the middle of the target; masks use the same clip space, so they follow
+            f.scale[0] = -f.scale[0];
+            f.offset[0] = -f.offset[0];
+        }
         D3D11_MAPPED_SUBRESOURCE map;
         if (FAILED(ctx->Map(d.frame_cb.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &map))) return;
         memcpy(map.pData, &f, sizeof f);

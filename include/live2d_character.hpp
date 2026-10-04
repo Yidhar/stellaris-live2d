@@ -26,6 +26,11 @@ public:
     // motions play once and then the idle loop resumes.
     bool PlayMotion(const std::string& group, int index = -1);
 
+    // Starts a motion from a randomly chosen group among those the patterns name (an exact group name, or a prefix ending in *;
+    // the Idle group only by its exact name). Avoids the group played last when there is another. False when none matches.
+    bool PlayMotionFrom(const std::vector<std::string>& patterns, int index = -1);
+    const std::string& last_motion_group() const { return last_group_; }
+
     // Where the model should look, each axis in -1..1 (x to the model's right, y up) and how much of the usual head turn,
     // eye movement and body lean that is (0 = not at all). The look eases towards the target over a fraction of a second;
     // it is added on top of the motion every frame, after the motion's own values were saved.
@@ -47,6 +52,7 @@ private:
     int p_angle_x_ = -1, p_angle_y_ = -1, p_angle_z_ = -1, p_body_x_ = -1, p_eye_x_ = -1, p_eye_y_ = -1;
     float look_target_x_ = 0.0f, look_target_y_ = 0.0f, look_weight_ = 0.0f, look_x_ = 0.0f, look_y_ = 0.0f;
     float now_ = 0.0f;
+    std::string last_group_;
     std::mt19937 rng_{ std::random_device{}() };
 };
 

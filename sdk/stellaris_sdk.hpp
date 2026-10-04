@@ -33,6 +33,8 @@ namespace rt {
     inline constexpr std::ptrdiff_t CPortraitObject_pos = 0x68;
     inline constexpr std::ptrdiff_t CPortraitObject_scale = 0xC4;      // float
     inline constexpr std::ptrdiff_t CPortraitObject_mirrored = 0xC8;   // uint8_t, 1 = drawn flipped left to right
+    inline constexpr std::ptrdiff_t CPortraitObject_scissor = 0xA8;    // int x0, y0, x1, y1: the clip area in framebuffer pixels
+    inline constexpr std::ptrdiff_t CPortraitObject_has_scissor = 0xBE;  // uint8_t, 1 = the scissor is valid
     // the CGuiGraphics passed to UpdatePortrait: the mouse pointer in the same GUI units
     inline constexpr std::ptrdiff_t CGuiGraphics_mouse_x = 0x350;      // float
     inline constexpr std::ptrdiff_t CGuiGraphics_mouse_y = 0x354;      // float

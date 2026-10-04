@@ -34,11 +34,12 @@ def entry(key, model):
     view = f"{{ {view} }}" if view else "{ auto = yes  body = 0.46 }"
     return f"""	{key} = {{
 		live2d = yes
+		live2d_unmirror = yes
 		live2d_model = "gfx/live2d/{model}/model.model3.json"
 		live2d_view = {view}
 		live2d_actions = {{
 			mouse_follow = {{ enabled = yes  strength = 0.6 }}
-			click = {{ enabled = yes  motion_group = "TapBody" }}
+			click = {{ enabled = yes  motion_group = "touch*" }}
 			drag = {{ enabled = no }}
 			scale = {{ enabled = yes  min = 0.8  max = 1.6 }}
 		}}

@@ -224,6 +224,16 @@ bool ReadDrawnRect(void* portrait, void* gui, ScreenRect* out) {
         out->x = (float)gui_w * 0.5f + (float)(int)x;
         out->y = (float)gui_h * 0.5f - (float)(int)y - out->h;
         out->mirrored = o[sdk::rt::CPortraitObject_mirrored] != 0;
+        if (o[sdk::rt::CPortraitObject_has_scissor] == 1) {
+            const int* sc = (const int*)(o + sdk::rt::CPortraitObject_scissor);
+            if (sc[0] < sc[2] && sc[1] < sc[3] && sc[0] > -30000 && sc[2] < 30000 && sc[1] > -30000 && sc[3] < 30000) {
+                out->has_clip = true;
+                out->clip_x0 = sc[0];
+                out->clip_y0 = sc[1];
+                out->clip_x1 = sc[2];
+                out->clip_y1 = sc[3];
+            }
+        }
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
@@ -359,8 +369,9 @@ void LogFrameOnce(void* portrait, const PortraitFrame& f) {
     for (int i = 0; i < logged; ++i)
         if (!strcmp(seen[i], key)) return;
     strcpy_s(seen[logged++], key);
-    Log("portrait %s: GUI rect x %.0f y %.0f size %.0fx%.0f mirrored %d, pointer %s(%.1f, %.1f)", key, f.rect.x, f.rect.y, f.rect.w, f.rect.h,
-        (int)f.rect.mirrored, f.has_mouse ? "" : "unknown ", f.mouse_x, f.mouse_y);
+    Log("portrait %s: GUI rect x %.0f y %.0f size %.0fx%.0f mirrored %d, clip %s(%d,%d)-(%d,%d), pointer %s(%.1f, %.1f)", key, f.rect.x, f.rect.y,
+        f.rect.w, f.rect.h, (int)f.rect.mirrored, f.rect.has_clip ? "" : "none ", f.rect.clip_x0, f.rect.clip_y0, f.rect.clip_x1, f.rect.clip_y1,
+        f.has_mouse ? "" : "unknown ", f.mouse_x, f.mouse_y);
 }
 
 void UpdatePortraitDetour(void* portrait, void* graphics, void* context) {
