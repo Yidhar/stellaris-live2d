@@ -25,7 +25,7 @@ def l2dctl(*args):
     return subprocess.run([sys.executable, os.path.join(HERE, "l2dctl.py"), *args], capture_output=True, text=True, timeout=90).stdout.strip()
 
 
-def load(name, folder, timeout):
+def load(name, folder, timeout, inject=True):
     gs.close_game()
     gs.point_continue_at(folder, name)
     subprocess.Popen([os.path.join(gs.GAME_DIR, "stellaris.exe"), "-dx11", "--continuelastsave"], cwd=gs.GAME_DIR,
@@ -58,7 +58,10 @@ def load(name, folder, timeout):
     st = bench.status()
     bench.close()
     print(f"loaded {name}: day {st['day']} paused={st['paused']}")
-    print(l2dctl("load"))
+    if inject:
+        print(l2dctl("load"))
+    else:
+        print("not injecting: the loader (d3dx9_43.dll) loads the plugin")
     return pid
 
 
@@ -67,6 +70,7 @@ def main():
     ap.add_argument("name")
     ap.add_argument("--folder", default="12_-513968080")
     ap.add_argument("--timeout", type=float, default=400)
+    ap.add_argument("--no-inject", action="store_true", help="the loader (d3dx9_43.dll next to the exe) loads the plugin")
     a = ap.parse_args()
     if a.name == "restore":
         import shutil
@@ -74,7 +78,7 @@ def main():
             shutil.copyfile(gs.BACKUP, gs.CONTINUE)
             print(f"restored {gs.CONTINUE}")
         return 0
-    load(a.name, a.folder, a.timeout)
+    load(a.name, a.folder, a.timeout, inject=not a.no_inject)
     return 0
 
 

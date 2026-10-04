@@ -122,6 +122,17 @@ does the plugin unless `mute_in_background=1`.
 **Status:** registration, background loading, drawing, supersampling, `mouse_follow`, `live2d_unmirror`, `live2d_scale`, the per-kind
 views, the events above, expressions, hit areas, breath, blink and lip sync are implemented. Not yet: Spine; poses (`pose3.json`: no test model has one).
 
+## A portrait group mod
+
+The engine's own syntax already says which portraits leaders, rulers, species and pops get: `portrait_groups` in `gfx/portraits/portraits/*.txt`
+(`human = { default = ...  game_setup = { ... }  species = { ... }  pop = { ... }  leader = { ... }  ruler = { ... } }`, each scope a list of
+`add = { trigger = { ... } portraits = { ... } }`). A mod that registers its own portraits the usual way (a copy of a vanilla entry, so a
+game without the plugin shows something ordinary) and overrides a group with them chooses *per scope* which of them leaders and which pops
+get; the engine picks one per leader or pop, and the plugin binds a model to the key the engine reports. Nothing of this needs the plugin to
+know about leaders: more portraits and a group that lists them is all it takes to have a different model per leader.
+`scripts/make_human_mod.py` builds exactly that for the humans (ten new portraits, the `human` group overridden: leaders and rulers pick
+among the first three of each gender, pops among the last two, species among all five).
+
 ## Making a mod
 
 1. Pack each model's textures to DXT5 (the format of the game's own textures; a quarter of the video memory, no mip building at

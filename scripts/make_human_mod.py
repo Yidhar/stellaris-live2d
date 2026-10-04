@@ -1,9 +1,13 @@
-"""Builds a test portrait-group mod that replaces the vanilla human portraits with Live2D models.
+"""Builds a test portrait-group mod that gives the humans Live2D portraits.
 
-The mod holds the models (DXT5 texture files, see l2d_pack) under gfx/live2d/ and one script file under
-gfx/portraits/live2d/ that registers the plugin's keys for the vanilla portrait keys of the human portrait group
-(human_male_01..05, human_female_01..05 and the legacy ones). The engine never reads that folder, and a game without the
-plugin shows the vanilla portraits as before.
+What it makes, the way a real portrait mod would:
+  * gfx/portraits/portraits/zz_live2d_humans.txt registers ten new portraits (l2d_human_female_01..05, l2d_human_male_01..05) the usual way,
+    each a copy of a vanilla human portrait (so a game without the plugin shows an ordinary human), and overrides the portrait group `human`
+    so that leaders and rulers pick from one subset of them, pops from another and species from all (the group syntax of the game:
+    `add = { trigger = ... portraits = { ... } }` per scope);
+  * gfx/portraits/live2d/00_live2d_humans.txt (read by the plugin, not by the game) says which of the new portraits are Live2D, with
+    which model, framing, events, voice lines and expression;
+  * gfx/live2d/ holds the models (DXT5 textures, see l2d_pack), sound/ the voice lines.
 
     python make_human_mod.py [--out <mod folder>] [--models <folder with packed models>] [--enable]
 
@@ -12,29 +16,78 @@ plugin shows the vanilla portraits as before.
 import argparse
 import json
 import os
+import re
 import shutil
 
 DOCS = os.path.join(os.path.expanduser("~"), "Documents", "Paradox Interactive", "Stellaris")
+GAME = os.environ.get("STELLARIS_DIR", r"E:\Program Files (x86)\Steam\steamapps\common\Stellaris")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MOD_NAME = "live2d_humans"
 
-# portrait key -> model folder. The test models are all female characters; the male keys get the ones left over.
+# vanilla portrait -> model folder. The test models are all female characters; the male portraits get the ones left over.
 ASSIGN = {
     "human_female_01": "pa15_5802", "human_female_02": "d243_s2901", "human_female_03": "d261_s3801",
     "human_female_04": "d119_s3001", "human_female_05": "d95_s50001",
     "human_male_01": "d307_s4703", "human_male_02": "d253_s6901", "human_male_03": "d351_s9001",
     "human_male_04": "d316_s11603", "human_male_05": "d243_s2901",
 }
+# which of the new portraits each scope of the group picks from (numbers 01..05): leaders and rulers the first three, pops the last two,
+# species all of them
+SCOPES = {"game_setup": [1, 2, 3], "species": [1, 2, 3, 4, 5], "pop": [4, 5], "leader": [1, 2, 3], "ruler": [1, 2, 3]}
 # a model whose automatic crop is wrong gets its own
 VIEWS = {"d307_s4703": "x = 0.48 y = 0.49 height = 0.17"}
-# live2d_scale per portrait key, to show the option: the first council slot is magnified by 30 percent
-SCALES = {"human_female_04": 1.3}
+# live2d_scale per portrait, to show the option: this one is magnified by 30 percent
+SCALES = {"l2d_human_female_04": 1.3}
 # lines bound to single motion groups, to show `voices`: this portrait says line1 for touch_1, line2 for touch_2, line3 for touch_3, and
 # nothing for its other touch motions (the others say any of the lines in turn)
-VOICES = {"human_female_01": {"touch_1": "line1.wav", "touch_2": "line2.wav", "touch_3": "line3.wav"}}
+VOICES = {"l2d_human_female_01": {"touch_1": "line1.wav", "touch_2": "line2.wav", "touch_3": "line3.wav"}}
 
 
-def entry(key, model, sounds):
+def new_key(vanilla):
+    return "l2d_" + vanilla
+
+
+def vanilla_entry(text, key):
+    """The text of `key = { ... }` in the top-level portraits block of a vanilla portraits file."""
+    m = re.search(r"^[ \t]*" + re.escape(key) + r"[ \t]*=[ \t]*\{", text, re.M)
+    if not m:
+        raise SystemExit(f"{key} is not in the vanilla file")
+    depth, i = 0, m.end() - 1
+    while True:
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[m.start():i + 1]
+        i += 1
+
+
+def group_text():
+    def gender_adds(trigger_female, trigger_male, numbers):
+        def add(trigger, gender):
+            keys = "\n".join(f"\t\t\t\t\t{new_key('human_' + gender + '_%02d' % n)}" for n in numbers)
+            return f"\t\t\tadd = {{\n\t\t\t\ttrigger = {{\n{trigger}\n\t\t\t\t}}\n\t\t\t\tportraits = {{\n{keys}\n\t\t\t\t}}\n\t\t\t}}\n"
+        return add(trigger_male, "male") + add(trigger_female, "female")
+
+    ruler_male = "\t\t\t\t\truler = { OR = { gender = male gender = indeterminable } }"
+    ruler_female = "\t\t\t\t\truler = { OR = { gender = female gender = indeterminable } }"
+    own_male = "\t\t\t\t\tOR = { gender = male gender = indeterminable }"
+    own_female = "\t\t\t\t\tOR = { gender = female gender = indeterminable }"
+    species_male = "\t\t\t\t\texists = species\n\t\t\t\t\tNOT = { species = { species_gender = female } }"
+    species_female = "\t\t\t\t\texists = species\n\t\t\t\t\tNOT = { species = { species_gender = male } }"
+    pop_male = "\t\t\t\t\tNOT = { species = { species_gender = female } }"
+    pop_female = "\t\t\t\t\tNOT = { species = { species_gender = male } }"
+    triggers = {"game_setup": (ruler_female, ruler_male), "species": (species_female, species_male), "pop": (pop_female, pop_male),
+                "leader": (own_female, own_male), "ruler": (own_female, own_male)}
+    out = "portrait_groups = {\n\thuman = {\n\t\tdefault = " + new_key("human_male_01") + "\n"
+    for scope, numbers in SCOPES.items():
+        female, male = triggers[scope]
+        out += f"\t\t{scope} = {{\n" + gender_adds(female, male, numbers) + "\t\t}\n"
+    return out + "\t}\n}\n"
+
+
+def live2d_entry(key, model, sounds):
     view = VIEWS.get(model)
     view = f"{{ {view} }}" if view else "{ auto = yes  body = 0.46 }"
     lines = " ".join(f'"{s}"' for s in sounds)
@@ -42,22 +95,22 @@ def entry(key, model, sounds):
     if key in VOICES:
         bound = " ".join(f'{group} = "sound/live2d_test/{name}"' for group, name in VOICES[key].items())
         say = f"  voices = {{ {bound} }}"
-    scale = f"		live2d_scale = {SCALES[key]}\n" if key in SCALES else ""
-    return f"""	{key} = {{
-		live2d = yes
-		live2d_unmirror = yes
-{scale}		live2d_model = "gfx/live2d/{model}/model.model3.json"
-		live2d_view = {view}
-		live2d_actions = {{
-			mouse_follow = {{ enabled = yes  strength = 0.6 }}
-			click = {{ motion_group = "touch*"{say} }}
-			click_head = {{ motion_group = "touch*" expression = "smile"{say} }}
-			hover = {{ expression = "smile"  expression_hold = 1.5 }}
-			appear = {{ motion_group = "login" }}
-			idle = {{ motion_group = "wait*"  interval = {{ 15 30 }} }}
-			greeting = {{ motion_group = "touch*"{say} }}
-		}}
-	}}
+    scale = f"\t\tlive2d_scale = {SCALES[key]}\n" if key in SCALES else ""
+    return f"""\t{key} = {{
+\t\tlive2d = yes
+\t\tlive2d_unmirror = yes
+{scale}\t\tlive2d_model = "gfx/live2d/{model}/model.model3.json"
+\t\tlive2d_view = {view}
+\t\tlive2d_actions = {{
+\t\t\tmouse_follow = {{ enabled = yes  strength = 0.6 }}
+\t\t\tclick = {{ motion_group = "touch*"{say} }}
+\t\t\tclick_head = {{ motion_group = "touch*" expression = "smile"{say} }}
+\t\t\thover = {{ expression = "smile"  expression_hold = 1.5 }}
+\t\t\tappear = {{ motion_group = "login" }}
+\t\t\tidle = {{ motion_group = "wait*"  interval = {{ 15 30 }} }}
+\t\t\tgreeting = {{ motion_group = "touch*"{say} }}
+\t\t}}
+\t}}
 """
 
 
@@ -73,9 +126,9 @@ def main():
     if os.path.isdir(a.out):
         shutil.rmtree(a.out)
     for model in sorted(set(ASSIGN.values())):
-        shutil.copytree(os.path.join(a.models, model), os.path.join(a.out, "gfx", "live2d", model))
-        # the test models have no expressions: give each a small one, the way a model author would (exp3.json + the entry in model3.json)
         folder = os.path.join(a.out, "gfx", "live2d", model)
+        shutil.copytree(os.path.join(a.models, model), folder)
+        # the test models have no expressions: give each a small one, the way a model author would (exp3.json + the entry in model3.json)
         os.makedirs(os.path.join(folder, "expressions"), exist_ok=True)
         with open(os.path.join(folder, "expressions", "smile.exp3.json"), "w", encoding="utf-8") as f:
             json.dump({"Type": "Live2D Expression", "FadeInTime": 0.4, "FadeOutTime": 0.6, "Parameters": [
@@ -95,17 +148,27 @@ def main():
                 shutil.copyfile(os.path.join(a.voices, name), os.path.join(a.out, "sound", "live2d_test", name))
                 sounds.append(f"sound/live2d_test/{name}")
 
-    keys = dict(ASSIGN)
-    for key, model in ASSIGN.items():  # the legacy human portraits use the same models
-        keys[key.replace("human_", "human_legacy_")] = model
+    # the engine's side: the new portraits (copies of the vanilla ones) and the overridden group
+    with open(os.path.join(GAME, "gfx", "portraits", "portraits", "07_portraits_human.txt"), encoding="utf-8-sig") as f:
+        vanilla = f.read()
+    entries = []
+    for key in ASSIGN:
+        text = vanilla_entry(vanilla, key)
+        entries.append(re.sub(r"^([ \t]*)" + re.escape(key), r"\1" + new_key(key), text, count=1))
+    engine_dir = os.path.join(a.out, "gfx", "portraits", "portraits")
+    os.makedirs(engine_dir)
+    with open(os.path.join(engine_dir, "zz_live2d_humans.txt"), "w", encoding="utf-8", newline="\n") as f:
+        f.write("# Ten portraits that look like the vanilla human ones to a game without the plugin, and the human portrait group choosing among them.\n"
+                "# The Live2D side of them is in gfx/portraits/live2d/.\n\nportraits = {\n" + "\n".join(entries) + "\n}\n\n" + group_text())
+
+    # the plugin's side
     side = os.path.join(a.out, "gfx", "portraits", "live2d")
     os.makedirs(side)
     with open(os.path.join(side, "00_live2d_humans.txt"), "w", encoding="utf-8", newline="\n") as f:
-        f.write("# Live2D replacements for the human portraits. Read by stellaris_live2d.dll, not by the game.\n"
-                "# The keys are the ones of the `portraits = { }` entries in gfx/portraits/portraits/07_portraits_human.txt.\n\n"
-                "portraits = {\n" + "".join(entry(k, m, sounds) for k, m in keys.items()) + "}\n")
+        f.write("# Which of this mod's portraits are Live2D, and how. Read by stellaris_live2d.dll, not by the game.\n\n"
+                "portraits = {\n" + "".join(live2d_entry(new_key(k), m, sounds) for k, m in ASSIGN.items()) + "}\n")
 
-    descriptor = ('version="0.1.0"\ntags={\n\t"Graphics"\n\t"Species"\n}\nname="Live2D Human Portraits (test)"\n'
+    descriptor = ('version="0.2.0"\ntags={\n\t"Graphics"\n\t"Species"\n}\nname="Live2D Human Portraits (test)"\n'
                   'supported_version="v4.5.*"\n')
     with open(os.path.join(a.out, "descriptor.mod"), "w", encoding="utf-8", newline="\n") as f:
         f.write(descriptor)
@@ -113,7 +176,7 @@ def main():
     with open(outer, "w", encoding="utf-8", newline="\n") as f:
         f.write(descriptor + f'path="{a.out.replace(os.sep, "/")}"\n')
     size = sum(os.path.getsize(os.path.join(d, n)) for d, _, ns in os.walk(a.out) for n in ns)
-    print(f"mod written to {a.out} ({size / 1048576:.1f} MB), descriptor {outer}; {len(keys)} portrait keys, "
+    print(f"mod written to {a.out} ({size / 1048576:.1f} MB), descriptor {outer}; {len(ASSIGN)} portraits, "
           f"{len(set(ASSIGN.values()))} models")
 
     if a.enable:

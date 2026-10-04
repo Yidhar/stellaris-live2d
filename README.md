@@ -56,8 +56,12 @@ You need a Cubism Core library and a model. Neither is included.
 2. **A model**: a folder with `model3.json`, the `moc3`, textures (PNG, JPEG, or DDS in DXT1/DXT3/DXT5, the format of the game's
    own textures: a quarter of the video memory, with the mip chain stored in the file) and optionally `physics3.json` and
    motions. `l2d_pack` converts a model's PNG textures to DXT5. Models carry their authors' licenses.
-3. Build the plugin (below), start the game, and run `python scripts\l2dctl.py load` (`unload`, `reload` and `status` work
-   too). The injection lasts for that game session only.
+3. Build the plugin (below) and run `python scripts\deploy.py`: it copies `stellaris_live2d.dll` and the loader `d3dx9_43.dll` next to
+   `stellaris.exe`, and from then on the game loads the plugin by itself a few seconds after it starts (`deploy.py --remove` takes
+   both away; a file `stellaris_live2d.disabled` next to the exe stops the loader for a session). The loader is a stand-in for a system
+   DLL that only the game's exe imports: the folder of the exe is searched first, so the game picks it up, it passes every call on to the
+   real `d3dx9_43.dll` and loads the plugin (it does nothing in any other program). Without it, `python scripts\l2dctl.py load` injects
+   the plugin into a running game for that session (`unload`, `reload` and `status` work too).
 4. Edit `stellaris_live2d.ini` next to `stellaris.exe` (created on first run, re-read every 2 seconds), open a screen with
    portraits (the council, the leaders list), and look at `stellaris_live2d.log` if nothing shows.
 
