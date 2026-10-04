@@ -44,6 +44,8 @@ public:
     // Applies every active motion to the model's parameters (which must hold the saved values of the last frame).
     void Update(Model& model, float now);
     bool Playing() const { return !entries_.empty(); }
+    // Sets driven[i] for every parameter i a playing motion has a curve for.
+    void MarkDriven(std::vector<uint8_t>* driven) const;
 
 private:
     struct Entry {

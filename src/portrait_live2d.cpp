@@ -852,6 +852,7 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, int kind
             if (flip) lx = -lx;  // the picture is flipped back: no allowance for the GUI's mirror
         }
         character.SetLookTarget(lx, ly, follow ? pr.follow.strength : 0.0f);
+        character.SetVoiceLevel(audio ? Voice::Get().Level(gs.slot.get()) : 0.0f);
         const uint64_t t0 = Ticks();
         character.Tick((float)step);
         d.tick_ticks += Ticks() - t0;

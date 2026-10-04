@@ -44,6 +44,15 @@ target_link_libraries(l2d_pack PRIVATE l2d_core)
 add_executable(l2d_bench src/bench_main.cpp)
 target_link_libraries(l2d_bench PRIVATE l2d_core dxgi)
 
+# l2d_voice_test.exe: plays a file through the voice playback and prints the lip sync level
+add_executable(l2d_voice_test src/voice_test_main.cpp src/voice.cpp)
+target_include_directories(l2d_voice_test PRIVATE include third_party)
+if (MSVC)
+    set_source_files_properties(src/voice.cpp PROPERTIES COMPILE_OPTIONS "/W0")
+    target_compile_options(l2d_voice_test PRIVATE /utf-8)
+endif()
+target_compile_definitions(l2d_voice_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
+
 # stellaris_live2d.dll: Live2D portraits for Stellaris
 add_library(stellaris_live2d SHARED
     src/live2d_main.cpp

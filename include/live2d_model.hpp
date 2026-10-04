@@ -65,6 +65,7 @@ public:
         int drawable = -1;
     };
     std::vector<HitArea> hit_areas;
+    std::vector<int> eye_blink_params, lip_sync_params;  // the parameters of the model3.json groups EyeBlink and LipSync
     std::filesystem::path physics_file;                       // empty when the model has none
     std::filesystem::path directory;
 

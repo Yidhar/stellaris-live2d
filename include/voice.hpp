@@ -19,6 +19,9 @@ public:
     // Starts the file (louder or quieter by `gain`) for `owner`, cutting off what that owner was still saying. Returns at once.
     bool Play(const void* owner, const std::filesystem::path& file, float gain);
 
+    // How loud the line `owner` is saying is right now: the RMS of the audio on its way out, smoothed, 0..1 (0 when it says nothing).
+    float Level(const void* owner);
+
     // Stops everything and closes the device. Only once nothing can call Play any more.
     void Shutdown();
 

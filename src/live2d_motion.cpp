@@ -119,6 +119,12 @@ void MotionPlayer::Start(std::shared_ptr<Motion> motion, float now, int loop) {
     entries_.push_back(std::move(e));
 }
 
+void MotionPlayer::MarkDriven(std::vector<uint8_t>* driven) const {
+    for (const Entry& e : entries_)
+        for (const Motion::Curve& c : e.motion->curves)
+            if (c.target == Motion::Target::Parameter && c.index >= 0 && c.index < (int)driven->size()) (*driven)[c.index] = 1;
+}
+
 void MotionPlayer::Update(Model& model, float now) {
     for (Entry& e : entries_) {
         const Motion& m = *e.motion;

@@ -35,6 +35,10 @@ public:
     // the model has no such expression.
     bool SetExpression(const std::string& name, float hold);
 
+    // How loud the model is being spoken to right now, 0..1 (the RMS of the voice line playing): the parameters of the model's LipSync group
+    // open the mouth by it, unless a playing motion keys them itself.
+    void SetVoiceLevel(float level) { voice_level_ = level; }
+
     // True while a motion other than the idle loop is still playing (an event's motion: not to be cut short by an idle one).
     bool PlayingAction() const { return now_ < action_until_; }
 
@@ -68,6 +72,13 @@ private:
     std::string last_group_;
     std::filesystem::path last_sound_;
     float action_until_ = 0.0f;
+    // what Cubism's samples give every model, on parameters no playing motion keys: breath, an eye blink (for models with an EyeBlink group)
+    // and the mouth following the voice
+    std::vector<uint8_t> driven_;
+    int breath_param_[5] = { -1, -1, -1, -1, -1 };
+    float voice_level_ = 0.0f, voice_smooth_ = 0.0f;
+    enum class Blink { Interval, Closing, Closed, Opening } blink_state_ = Blink::Interval;
+    float blink_time_ = 0.0f, blink_next_ = 3.0f;
     ExpressionPlayer expressions_;
     std::map<std::string, std::shared_ptr<Expression>> expression_cache_;
     std::mt19937 rng_{ std::random_device{}() };

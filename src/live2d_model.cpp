@@ -122,6 +122,18 @@ bool Model::Load(const core::Api* api, const fs::path& model3_json, std::string*
             if (!name.empty() && !file.empty()) expressions[name] = directory / fs::u8path(file);
         }
     }
+    if (j.contains("Groups")) {
+        for (const auto& g : j["Groups"]) {
+            if (g.value("Target", std::string()) != "Parameter") continue;
+            const std::string name = g.value("Name", std::string());
+            std::vector<int>* list = name == "EyeBlink" ? &eye_blink_params : name == "LipSync" ? &lip_sync_params : nullptr;
+            if (!list || !g.contains("Ids")) continue;
+            for (const auto& id : g["Ids"]) {
+                const auto it = parameter_index.find(id.get<std::string>());
+                if (it != parameter_index.end()) list->push_back(it->second);
+            }
+        }
+    }
     if (j.contains("HitAreas")) {
         const char** ids = api_->GetDrawableIds(model_);
         for (const auto& h : j["HitAreas"]) {
