@@ -40,9 +40,15 @@ bool PortraitMirrored(const void* portrait);
 // overlap, the one whose centre is nearest gets it. Only the part the GUI shows counts (inside its clip area). Nothing is swallowed:
 // the GUI still gets every message, so a button drawn over the portrait is pressed as well.
 struct PortraitEvent {
-    enum class Type { Click, Hover } type = Type::Click;
+    enum class Type { Click, Hover, Greeting } type = Type::Click;
     float u = 0, v = 0;  // where in the portrait's rectangle as drawn: 0..1 from its left and from its top
 };
+
+// Adds an event for a portrait (the game's greeting sound is one: not a mouse event, but the same way to the painter).
+void QueuePortraitEvent(const void* portrait, PortraitEvent::Type type);
+
+// Whether the game window is the foreground window.
+bool GameWindowInFront();
 
 // The oldest event waiting for this portrait (events older than half a second are dropped); false when there is none.
 bool PopPortraitEvent(const void* portrait, PortraitEvent* out);

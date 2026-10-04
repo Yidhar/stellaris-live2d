@@ -35,6 +35,9 @@ public:
     // times a second, and only while one of its portraits is on screen; portraits of one model and size share the frame.
     PaintResult Paint(const void* portrait, const char* key, int kind, ID3D11Texture2D* target, const D3D11_TEXTURE2D_DESC& desc);
 
+    // Whether the mod gives the portrait with this key a greeting action that replaces the game's own greeting sound.
+    bool GreetingReplaced(const char* key);
+
     // Releases everything. Only once the portrait hook is removed and no Paint can be running.
     void Shutdown();
 

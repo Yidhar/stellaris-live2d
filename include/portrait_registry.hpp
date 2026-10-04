@@ -19,7 +19,8 @@
 //         click  = { motion_group = "touch*" ... }     what happens on each event, see EventAction; events: click (anywhere on the picture),
 //         click_Head = { ... }                          click_<Area> (a hit area of the model, the Name in its model3.json HitAreas),
 //         hover  = { ... }                              the pointer comes onto the picture, appear (the portrait shows up), idle (now and
-//         appear = { ... }   idle = { interval = { 20 40 } ... }   then, every `interval` seconds while it is shown)
+//         appear = { ... }   idle = { interval = { 20 40 } ... }   then, every `interval` seconds while it is shown), greeting (the game plays
+//         greeting = { replace_engine_sound = yes ... }            the portrait's own greeting sound, as in the diplomacy window)
 //     }
 // The motion groups and expressions are the model's own, named in its model3.json; the mod only picks which one an event plays.
 //
@@ -55,6 +56,7 @@ struct EventAction {
     std::string expression;     // an expression of the model: its Name in the Expressions of model3.json
     float expression_hold = 3.0f;  // seconds before it fades back to the neutral face; 0 = until another one is set
     float interval_min = 20.0f, interval_max = 40.0f;  // idle only: seconds between two
+    bool replace_engine_sound = false;  // greeting only: the game's own greeting sound is not played (the action's line replaces it)
 };
 
 // The settings as text, to tell whether a reload changed anything.
@@ -69,6 +71,7 @@ inline std::string Describe(const EventAction& a) {
     }
     s += "|";
     for (const std::string& l : a.sounds) s += l + ",";
+    s += std::string("|") + (a.replace_engine_sound ? "replace" : "keep");
     s += "|" + std::to_string(a.volume) + "|" + a.expression + "|" + std::to_string(a.expression_hold) + "|" +
          std::to_string(a.interval_min) + "|" + std::to_string(a.interval_max);
     return s;
@@ -93,7 +96,7 @@ struct PortraitEntry {
     ViewSpec view;              // the default framing (with live2d_scale in `scale`)
     std::vector<ViewSpec> views;  // the framings for one kind or size of portrait
     MouseFollow mouse_follow;
-    EventAction click, hover, appear, idle;
+    EventAction click, hover, appear, idle, greeting;
     std::vector<std::pair<std::string, EventAction>> click_areas;  // by hit area name
     std::string source;         // file and line, for the log
 };

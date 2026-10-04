@@ -148,7 +148,7 @@ struct ActionState {
     std::vector<uint32_t> voice_next;  // render thread: per `voices` entry of the action, which of its lines comes next
     uint32_t sound_next = 0;           // the same for its `sounds`
 };
-enum { kStateClick = 0, kStateHover = 1, kStateAppear = 2, kStateIdle = 3, kStateAreas = 4 };
+enum { kStateClick = 0, kStateHover = 1, kStateAppear = 2, kStateIdle = 3, kStateGreeting = 4, kStateAreas = 5 };
 
 // One framing of a presentation: the default, or one for a kind of portrait or a size of picture.
 struct ViewVariant {
@@ -161,7 +161,7 @@ struct Presentation {
     int slot = -1;  // index into the slots
     std::vector<ViewVariant> variants;  // [0] the default, then the ones for a kind or size
     MouseFollow follow;
-    EventAction click, hover, appear, idle;
+    EventAction click, hover, appear, idle, greeting;
     std::vector<std::pair<std::string, EventAction>> click_areas;
     std::vector<ActionState> states;    // kStateClick.., then one per click area
     bool unmirror = true;
@@ -394,7 +394,7 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         std::vector<ViewSpec> views;
         bool unmirror = true;
         MouseFollow follow;
-        EventAction click, hover, appear, idle;
+        EventAction click, hover, appear, idle, greeting;
         std::vector<std::pair<std::string, EventAction>> click_areas;
         std::string identity;
     };
@@ -419,13 +419,14 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         w.hover = e.hover;
         w.appear = e.appear;
         w.idle = e.idle;
+        w.greeting = e.greeting;
         w.click_areas = e.click_areas;
         char id[256];
         snprintf(id, sizeof id, "%d|m%d f%.2f u%d|", w.model, (int)e.mouse_follow.enabled, e.mouse_follow.strength, (int)e.unmirror);
         w.identity = std::string(id) + DescribeView(w.view);
         for (const ViewSpec& v : w.views) w.identity += "|view " + v.selector + " " + DescribeView(v);
         w.identity += std::string("|click ") + Describe(e.click) + "|hover " + Describe(e.hover) + "|appear " + Describe(e.appear) + "|idle " +
-                     Describe(e.idle);
+                     Describe(e.idle) + "|greeting " + Describe(e.greeting);
         for (const auto& [name, action] : e.click_areas) w.identity += "|click_" + name + " " + Describe(action);
         int index = -1;
         for (size_t i = 0; i < wants.size(); ++i)
@@ -546,12 +547,14 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         p->hover = w.hover;
         p->appear = w.appear;
         p->idle = w.idle;
+        p->greeting = w.greeting;
         p->click_areas = w.click_areas;
         p->states.resize(kStateAreas + w.click_areas.size());
         p->states[kStateClick].voice_next.assign(w.click.voices.size(), 0);
         p->states[kStateHover].voice_next.assign(w.hover.voices.size(), 0);
         p->states[kStateAppear].voice_next.assign(w.appear.voices.size(), 0);
         p->states[kStateIdle].voice_next.assign(w.idle.voices.size(), 0);
+        p->states[kStateGreeting].voice_next.assign(w.greeting.voices.size(), 0);
         for (size_t i = 0; i < w.click_areas.size(); ++i) p->states[kStateAreas + i].voice_next.assign(w.click_areas[i].second.voices.size(), 0);
         p->unmirror = w.unmirror;
         p->identity = w.identity;
@@ -808,6 +811,10 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, int kind
                 if (pr.hover.enabled) fire(pr.hover, pr.states[kStateHover], "hover");
                 continue;
             }
+            if (ev.type == PortraitEvent::Type::Greeting) {
+                if (pr.greeting.enabled) fire(pr.greeting, pr.states[kStateGreeting], "greeting");
+                continue;
+            }
             const EventAction* action = &pr.click;
             ActionState* state = &pr.states[kStateClick];
             if (!pr.click_areas.empty()) {  // which part of the model was clicked
@@ -908,6 +915,15 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, int kind
     d.copy_ticks += Ticks() - t1;
     ++d.copies;
     return PaintResult::Painted;
+}
+
+bool Live2DPainter::GreetingReplaced(const char* key) {
+    Impl& d = *impl_;
+    if (!d.gpu_registry_mode || !key || !key[0]) return false;  // render thread state: the hook runs on the render thread
+    const auto it = d.gpu_by_key.find(key);
+    if (it == d.gpu_by_key.end()) return false;
+    const Presentation& pr = *d.gpu_presentations[it->second];
+    return pr.greeting.enabled && pr.greeting.replace_engine_sound;
 }
 
 void Live2DPainter::Shutdown() {

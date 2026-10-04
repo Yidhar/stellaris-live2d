@@ -77,6 +77,7 @@ void ParseAction(const pdx::Node& n, const fs::path& root, EventAction* a) {
     a->volume = (float)n.Num("volume", 1.0);
     a->expression = n.Str("expression");
     a->expression_hold = (float)n.Num("expression_hold", 3.0);
+    a->replace_engine_sound = n.Bool("replace_engine_sound", false);
     if (const pdx::Node* iv = n.Find("interval"); iv && iv->block) {
         std::vector<double> v;
         for (const pdx::Node& c : iv->children)
@@ -149,6 +150,8 @@ void ReadEntry(const pdx::Node& e, const fs::path& root, const std::string& file
                 ParseAction(c, root, &p.appear);
             } else if (c.key == "idle") {
                 ParseAction(c, root, &p.idle);
+            } else if (c.key == "greeting") {
+                ParseAction(c, root, &p.greeting);
             } else if (!c.key.empty()) {
                 reg->messages.push_back(p.source + ": portrait " + p.key + ": live2d_actions has no action `" + c.key + "`; ignored");
             }

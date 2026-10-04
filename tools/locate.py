@@ -34,6 +34,25 @@ LITERAL = r"C:\mnt\gsg\stellaris\augustus\augustus\source\graphics\portraitobjec
 RENDER_STRING = "Invalid alternate sprite configuration index [%i], must be in range [%i, %i)"
 
 
+def all_strings(im, text):
+    """RVAs of every NUL-terminated copy of a string literal."""
+    needle = b"\0" + text.encode() + b"\0"
+    pos = 0
+    while True:
+        i = im.img.find(needle, pos)
+        if i < 0:
+            return
+        yield i + 1
+        pos = i + 1
+
+
+def functions_mentioning(im, text):
+    out = set()
+    for rva in all_strings(im, text):
+        out |= set(im.functions_referencing(rva))
+    return out
+
+
 def fail(msg):
     print("FAILED:", msg, file=sys.stderr)
     sys.exit(1)
@@ -161,6 +180,77 @@ def main():
     if data is None or count != data + 0xC:
         fail(f"could not read the portrait array in {ctrl:#x}: data {data} count {count}")
 
+    # The game's volume settings: CGameApplication::UpdateAudioVolume, the only function that mentions the four mixer categories, loads the
+    # CSettings object and reads the sliders from it (settings.txt: master_volume, dev_master_volume, sound_fx_volume, music_volume,
+    # ambient_volume, voice_volume, tts_volume). Each category's value is stored into the category found by its name, which names the field.
+    cats = [functions_mentioning(im, n) for n in ("Effects", "Ambient", "Voice", "TTS")]
+    audio_fns = set.intersection(*cats)
+    if len(audio_fns) != 1:
+        fail(f"expected exactly one function that mentions the Effects, Ambient, Voice and TTS categories, found {[hex(f) for f in audio_fns]}")
+    audio_fn = next(iter(audio_fns))
+    ains = im.disasm_fn(audio_fn, 0x1200)
+    settings_global = None
+    loads = {}  # register -> field offset, in the order read
+    order = []
+    for x in ains[:40]:
+        t = im.rip_target(x)
+        if settings_global is None:
+            if x.mnemonic == "mov" and t and x.op_str.startswith("rax,"):
+                settings_global = t
+            continue
+        m = re.match(r"(xmm\d+), dword ptr \[rax \+ (0x[0-9a-f]+)\]", x.op_str) if x.mnemonic == "movss" else None
+        if m:
+            loads[m.group(1)] = int(m.group(2), 16)
+            order.append(int(m.group(2), 16))
+    by_category = {}
+    stored_to_context = {}
+    for k, x in enumerate(ains):
+        if x.mnemonic == "lea" and x.op_str.startswith("rdx, [rip"):
+            t = im.rip_target(x)
+            name = im.cstr(t, 16) if t else ""
+            if name in ("Effects", "Ambient", "Voice", "TTS"):
+                for y in ains[k + 1:k + 8]:
+                    if y.mnemonic == "movss" and y.op_str.startswith("dword ptr [rax + 8], "):
+                        by_category[name] = loads.get(y.op_str.split(",")[1].strip())
+                        break
+        elif x.mnemonic == "movss":
+            m = re.match(r"dword ptr \[rcx \+ (0x[0-9a-f]+)\], (xmm\d+)", x.op_str)
+            if m:
+                stored_to_context[int(m.group(1), 16)] = loads.get(m.group(2))
+    music_off = stored_to_context.get(0x900)  # the context's music volume
+    if settings_global is None or len(order) < 5 or None in by_category.values() or len(by_category) != 4 or music_off is None or order[1] != order[0] + 4:
+        fail(f"could not read the volume fields in {audio_fn:#x}: global {settings_global}, loads {order}, categories {by_category}, music {music_off}")
+    vol = {"master": order[0], "dev_master": order[1], "music": music_off, "sfx": by_category["Effects"], "ambient": by_category["Ambient"],
+           "voice": by_category["Voice"], "tts": by_category["TTS"]}
+
+    # CPortraitObject::GetGreetingSoundEffect: the function that logs "Missing sound effect: %s", works on the portrait key, and whose
+    # result its callers (two or more of them) hand straight to the sound player (`mov rcx, rax`)
+    def touches_key(f):
+        for x in im.disasm_fn(f, 0x800):
+            m = re.search(r"\+ (0x[0-9a-f]+)\]", x.op_str)
+            if m and key <= int(m.group(1), 16) < key + 0x30:
+                return True
+        return False
+    greet = []
+    for f in sorted(functions_mentioning(im, "Missing sound effect: %s")):
+        if not touches_key(f):
+            continue
+        sites = []
+        for mm in re.finditer(rb"\xE8", text):
+            i = mm.start()
+            if i + 5 <= len(text) and im.text0 + i + 5 + struct.unpack_from("<i", text, i + 1)[0] == f:
+                sites.append(im.text0 + i)
+        handed = 0
+        for site in sites:
+            nxt = next((x for x in im.md.disasm(im.img[site + 5:site + 20], im.ib + site + 5)), None)
+            if nxt is not None and nxt.mnemonic == "mov" and nxt.op_str == "rcx, rax":
+                handed += 1
+        if handed >= 2:
+            greet.append(f)
+    if len(greet) != 1:
+        fail(f"expected exactly one greeting sound function, found {[hex(f) for f in greet]}")
+    greeting = greet[0]
+
     if im.timestamp != LAYOUT_VERIFIED_FOR:
         print(f"WARNING: the GUI object layout constants were verified for exe {LAYOUT_VERIFIED_FOR:#010x}, this is {im.timestamp:#010x}; "
               "re-check them against docs/engine-notes.md", file=sys.stderr)
@@ -172,6 +262,8 @@ def main():
     print(f"CPortraitObject needs-render flag +{dirty:#x} (uint8)")
     print(f"CPortraitObject key (CString)     +{key:#x}  (database table at +{table:#x})")
     print(f"CPortraitObject::Render           rva {render:#x}")
+    print(f"CPortraitObject::GetGreetingSoundEffect rva {greeting:#x}")
+    print(f"CSettings global                  rva {settings_global:#x}; volume fields " + ", ".join(f"{k} +{v:#x}" for k, v in vol.items()) + f" (read in {audio_fn:#x})")
     print(f"UpdatePortraits (controller)      rva {ctrl:#x}")
     print(f"portrait array                    data pointer rva {data:#x}, count rva {count:#x}")
 
@@ -192,9 +284,13 @@ namespace fn {{
     // void (*)(void* self, void* guiGraphics, void* ctx, const float* matrix16, float alpha, uint16_t state, void* texture): the GUI
     // draws the portrait's render target; the matrix holds the absolute position, guiGraphics is the engine's CGuiGraphics
     inline constexpr uintptr_t CPortraitObject_Render = {render:#x};
+    // void* (*)(void* portrait): the sound effect of the portrait's greeting (null if there is none); its callers play it
+    inline constexpr uintptr_t CPortraitObject_GetGreetingSoundEffect = {greeting:#x};
 }}  // namespace fn
 
 namespace glob {{
+    // pointer to the engine's settings object (settings.txt as the game uses it right now)
+    inline constexpr uintptr_t CSettings = {settings_global:#x};
     // The engine's array of every portrait object (CPdxArray<CPortraitObject*>): RVA of its data pointer and of its int count
     inline constexpr uintptr_t CPortraitObjectController_PortraitObjects_data = {data:#x};
     inline constexpr uintptr_t CPortraitObjectController_PortraitObjects_count = {count:#x};
@@ -219,9 +315,22 @@ namespace rt {{
     // the CGuiGraphics passed to UpdatePortrait: the mouse pointer in the same GUI units
     inline constexpr std::ptrdiff_t CGuiGraphics_mouse_x = 0x350;      // float
     inline constexpr std::ptrdiff_t CGuiGraphics_mouse_y = 0x354;      // float
-    inline constexpr std::ptrdiff_t CGuiGraphics_width = 0x28;         // int, size of the GUI in GUI units
+    inline constexpr std::ptrdiff_t CGuiGraphics_width = 0x28;         // int, size of the window in pixels (the origin of the GUI's world is its middle)
     inline constexpr std::ptrdiff_t CGuiGraphics_height = 0x2C;        // int
+    inline constexpr std::ptrdiff_t CGuiGraphics_gui_width = 0x30;     // int, size of the GUI in GUI units: the pixels divided by the UI scale
+    inline constexpr std::ptrdiff_t CGuiGraphics_gui_height = 0x34;    // int
 }}  // namespace rt
+
+namespace rt_settings {{
+    // floats in the settings object, 0..100 as on the sliders; the effective volume of a sound is master/100 * dev_master/100 * its category/100
+    inline constexpr std::ptrdiff_t master = {vol["master"]:#x};
+    inline constexpr std::ptrdiff_t dev_master = {vol["dev_master"]:#x};  // a hidden multiplier, 75 by default
+    inline constexpr std::ptrdiff_t music = {vol["music"]:#x};
+    inline constexpr std::ptrdiff_t sfx = {vol["sfx"]:#x};  // the "Effects" category, where the portraits' greeting sounds are
+    inline constexpr std::ptrdiff_t ambient = {vol["ambient"]:#x};
+    inline constexpr std::ptrdiff_t voice = {vol["voice"]:#x};  // the "Voice" category: advisor and event speech
+    inline constexpr std::ptrdiff_t tts = {vol["tts"]:#x};
+}}  // namespace rt_settings
 
 namespace vt {{
     // virtual void GetSize(this, int out[2]): the width and height the GUI draws the object at (sprite size times scale)

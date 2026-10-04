@@ -37,6 +37,8 @@ struct Settings {
     int supersample = 2;       // 2: the models are drawn at twice the size and averaged down (crisper fine lines); 1: at the picture's size
     int model_cache_mb = 512;  // memory the loaded models may take (0 = no limit): within it every model is loaded in advance, beyond it
                                // on demand, and the model unused for longest is dropped to make room
+    std::string volume_channel = "voice";  // which slider of the game's sound settings the voice follows: voice, effects, or none (the plugin's volume only)
+    bool mute_in_background = false;       // silent while the game window is not in front (the game itself keeps playing)
     bool audio = true;     // play the voice lines of motions started by interactions
     float volume = 0.8f;   // master volume of those, 0..1
     bool interactions = true;  // the mouse follow (and later click, drag, zoom) that mods declare; off = models just play
@@ -50,6 +52,8 @@ struct Settings {
 bool Install(uintptr_t base);
 // Returns false when something of the plugin could not be taken out of the game (a hung window): the DLL must then stay loaded.
 bool Uninstall();
+// The voice volume from the settings, the game's own volume sliders and the window focus; the worker calls it every couple of seconds.
+void UpdateVoiceVolume(const Settings& s);
 void Apply(const Settings& s, const Registry& registry);
 std::string StatsLine();
 

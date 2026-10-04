@@ -73,6 +73,11 @@ You need a Cubism Core library and a model. Neither is included.
 | `supersample` | `2` | `2` draws the models at twice the size and averages down (crisper fine lines, costs little); `1` is off |
 | `fps` | `30` | how often the model is advanced and redrawn |
 | `physics` | `1` | secondary motion from the model's `physics3.json` |
+| `interactions` | `1` | the events mods declare (mouse follow, click, hover, ...); `0` = the models only play their own motions |
+| `audio`, `volume` | `1`, `0.8` | the voice lines of events on or off, and the plugin's own volume (multiplied by the game's) |
+| `volume_channel` | `voice` | which slider of the game's sound settings the voice follows: `voice`, `effects` or `none` |
+| `mute_in_background` | `0` | `1` = silent while the game window is not in front |
+| `extra_mod_dirs` | | mod root folders read as if they were enabled (development) |
 | `test_pattern` | `0` | paint a test pattern instead (a check that the hook works) |
 
 ### Portrait mods

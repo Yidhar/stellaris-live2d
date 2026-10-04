@@ -55,6 +55,7 @@ def entry(key, model, sounds):
 			hover = {{ expression = "smile"  expression_hold = 1.5 }}
 			appear = {{ motion_group = "login" }}
 			idle = {{ motion_group = "wait*"  interval = {{ 15 30 }} }}
+			greeting = {{ motion_group = "touch*"{say} }}
 		}}
 	}}
 """

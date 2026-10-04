@@ -169,6 +169,13 @@ void EnsureSubclass() {
 
 } // namespace
 
+void QueuePortraitEvent(const void* portrait, PortraitEvent::Type type) { Queue(portrait, type, 0.5f, 0.5f); }
+
+bool GameWindowInFront() {
+    HWND hwnd = GameWindow();
+    return hwnd && GetForegroundWindow() == hwnd;
+}
+
 void SetPortraitFrame(const PortraitFrame& frame) {
     g_frame = frame;
     EnsureSubclass();

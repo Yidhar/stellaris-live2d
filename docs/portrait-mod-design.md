@@ -54,6 +54,7 @@ portraits = {
 			hover      = { expression = "smile"  expression_hold = 1.5 }       # the pointer came onto the picture
 			appear     = { motion_group = "login" }                            # the portrait shows up
 			idle       = { motion_group = "wait*"  interval = { 15 30 } }      # now and then while it is shown
+			greeting   = { motion_group = "touch*"  replace_engine_sound = no }   # the game plays the portrait's greeting sound
 		}
 	}
 }
@@ -99,6 +100,7 @@ name their groups differently (`touch_1`, `touch_01`, `Tap`...), so a group can 
 | `hover` | the pointer comes onto the picture |
 | `appear` | the portrait shows up: the first time, or again after not being drawn for a while (a screen opened) |
 | `idle` | every `interval = { min max }` seconds (random in between) while the portrait is shown, not over a motion an event started |
+| `greeting` | the game plays the portrait's own greeting sound (`greeting_sound` of its `portraits` entry: the diplomacy window opening, an incoming proposal, a species being previewed). The plugin hooks the engine function that fetches that sound; with `replace_engine_sound = yes` the game's sound is not played, so the action's line takes its place |
 
 Each action may have:
 
@@ -111,11 +113,14 @@ Each action may have:
 | `volume = 1` | scales the lines against the master volume |
 
 WAV, MP3, FLAC and Ogg Vorbis lines are played (not Opus or AAC); a new line cuts off the portrait's previous one. The ini keys `audio`
-(default 1) and `volume` (default 0.8) switch the voice off and set the master volume.
+(default 1) and `volume` (default 0.8) switch the voice off and set the plugin's own volume, which is then multiplied by the game's: master
+volume, the hidden `dev_master_volume` and the slider named by `volume_channel` (`voice`, the default: the advisor and event speech slider;
+`effects`: the sound effects slider, where the portraits' greeting sounds are; `none`: only `volume`), read from the game's settings object
+every couple of seconds, so moving the sliders in the game's settings moves the voice. The game does not mute in the background and neither
+does the plugin unless `mute_in_background=1`.
 
 **Status:** registration, background loading, drawing, supersampling, `mouse_follow`, `live2d_unmirror`, `live2d_scale`, the per-kind
-views, the events above, expressions, hit areas, breath, blink and lip sync are implemented. Not yet: Spine; a `greeting` event for the
-engine's own greeting sound; poses (`pose3.json`: no test model has one); the voice following the game's volume settings.
+views, the events above, expressions, hit areas, breath, blink and lip sync are implemented. Not yet: Spine; poses (`pose3.json`: no test model has one).
 
 ## Making a mod
 

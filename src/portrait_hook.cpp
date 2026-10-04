@@ -8,6 +8,7 @@
 // that matched is remembered and re-validated on every use.
 #include "live2d.hpp"
 #include "portrait_live2d.hpp"
+#include "voice.hpp"
 #include "portrait_input.hpp"
 #include "stellaris_sdk.hpp"
 #include "MinHook.h"
@@ -57,11 +58,13 @@ namespace {
 
 using FnUpdatePortrait = void (*)(void* portrait, void* graphics, void* context);
 using FnRender = void (*)(void* self, void* gui, void* context, const float* matrix, float alpha, uint16_t state, void* texture);
+using FnGreeting = void* (*)(void* portrait);
 
 uintptr_t g_base = 0;
 bool g_installed = false;
 FnUpdatePortrait g_orig_update = nullptr;
 FnRender g_orig_render = nullptr;
+FnGreeting g_orig_greeting = nullptr;
 std::atomic<int> g_in_hook{ 0 };  // detours currently running, drained on unload
 
 // what the hook paints after the engine rendered a portrait: 0 nothing, 1 the test pattern, 2 the Live2D model
@@ -245,8 +248,8 @@ bool ReadGuiMouse(void* gui, float* x, float* y, float* w, float* h) {
         const auto* g = (const uint8_t*)gui;
         *x = *(const float*)(g + sdk::rt::CGuiGraphics_mouse_x);
         *y = *(const float*)(g + sdk::rt::CGuiGraphics_mouse_y);
-        *w = (float)*(const int*)(g + sdk::rt::CGuiGraphics_width);
-        *h = (float)*(const int*)(g + sdk::rt::CGuiGraphics_height);
+        *w = (float)*(const int*)(g + sdk::rt::CGuiGraphics_gui_width);    // the pointer is in GUI units: the pixels divided by the UI scale
+        *h = (float)*(const int*)(g + sdk::rt::CGuiGraphics_gui_height);
         return std::isfinite(*x) && std::isfinite(*y) && std::fabs(*x) < 30000.0f && std::fabs(*y) < 30000.0f && *w >= 320.0f &&
                *w <= 16384.0f && *h >= 240.0f && *h <= 16384.0f;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -418,6 +421,21 @@ void RenderDetour(void* self, void* gui, void* context, const float* matrix, flo
     g_in_hook.fetch_sub(1);
 }
 
+// The game plays a portrait's greeting sound (the diplomacy window opens, a species is previewed): emit the portrait's `greeting` event, and
+// when the mod's greeting action replaces the sound, hand the caller nothing to play (the callers accept a missing sound).
+void* GreetingDetour(void* portrait) {
+    g_in_hook.fetch_add(1);
+    void* effect = g_orig_greeting(portrait);
+    if (effect && g_mode.load() == 2) {
+        char key[96];
+        ReadPortraitKey((const uint8_t*)portrait, key, sizeof key);
+        QueuePortraitEvent(portrait, PortraitEvent::Type::Greeting);
+        if (Painter().GreetingReplaced(key)) effect = nullptr;
+    }
+    g_in_hook.fetch_sub(1);
+    return effect;
+}
+
 bool ExeMatchesSdk(uintptr_t base) {
     auto dos = (PIMAGE_DOS_HEADER)base;
     auto nt = (PIMAGE_NT_HEADERS)(base + dos->e_lfanew);
@@ -452,8 +470,42 @@ bool Install(uintptr_t base) {
         Log("could not hook CPortraitObject::Render at 0x%llX: portraits will not know where they are on the screen", (unsigned long long)render);
     else
         Log("hooked CPortraitObject::Render at 0x%llX", (unsigned long long)render);
+    const uintptr_t greeting = base + sdk::fn::CPortraitObject_GetGreetingSoundEffect;
+    if (MH_CreateHook((LPVOID)greeting, (LPVOID)&GreetingDetour, (LPVOID*)&g_orig_greeting) != MH_OK || MH_EnableHook((LPVOID)greeting) != MH_OK)
+        Log("could not hook CPortraitObject::GetGreetingSoundEffect at 0x%llX: no greeting event", (unsigned long long)greeting);
+    else
+        Log("hooked CPortraitObject::GetGreetingSoundEffect at 0x%llX", (unsigned long long)greeting);
     g_installed = true;
     return true;
+}
+
+// The volume of the game's own settings for one channel, 0..1: master * dev_master * the channel's slider, each 0..100 in the settings
+// object; negative when it cannot be read.
+float GameVolume(const std::string& channel) {
+    __try {
+        const auto* settings = *(const uint8_t* const*)(g_base + sdk::glob::CSettings);
+        if (!settings) return -1.0f;
+        auto field = [&](std::ptrdiff_t off) { return *(const float*)(settings + off); };
+        const float master = field(sdk::rt_settings::master), dev = field(sdk::rt_settings::dev_master);
+        const float slider = channel == "effects" ? field(sdk::rt_settings::sfx) : field(sdk::rt_settings::voice);
+        for (float v : { master, dev, slider })
+            if (!(v >= 0.0f && v <= 200.0f)) return -1.0f;
+        return master / 100.0f * (dev / 100.0f) * (slider / 100.0f);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1.0f;
+    }
+}
+
+// The voice volume: the plugin's own `volume` times the game's (so the sliders of the game's settings move it), and silent while the game is not
+// the foreground window when the ini says so. Cheap; called every couple of seconds.
+void UpdateVoiceVolume(const Settings& s) {
+    float volume = s.volume;
+    if (s.volume_channel != "none") {
+        const float game = GameVolume(s.volume_channel);
+        if (game >= 0.0f) volume *= game;
+    }
+    if (s.mute_in_background && !GameWindowInFront()) volume = 0.0f;
+    Voice::Get().SetVolume(volume);
 }
 
 bool Uninstall() {

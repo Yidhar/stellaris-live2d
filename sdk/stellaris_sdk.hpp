@@ -13,9 +13,13 @@ namespace fn {
     // void (*)(void* self, void* guiGraphics, void* ctx, const float* matrix16, float alpha, uint16_t state, void* texture): the GUI
     // draws the portrait's render target; the matrix holds the absolute position, guiGraphics is the engine's CGuiGraphics
     inline constexpr uintptr_t CPortraitObject_Render = 0xfad5b0;
+    // void* (*)(void* portrait): the sound effect of the portrait's greeting (null if there is none); its callers play it
+    inline constexpr uintptr_t CPortraitObject_GetGreetingSoundEffect = 0xfb3ce0;
 }  // namespace fn
 
 namespace glob {
+    // pointer to the engine's settings object (settings.txt as the game uses it right now)
+    inline constexpr uintptr_t CSettings = 0x322e198;
     // The engine's array of every portrait object (CPdxArray<CPortraitObject*>): RVA of its data pointer and of its int count
     inline constexpr uintptr_t CPortraitObjectController_PortraitObjects_data = 0x287f8b8;
     inline constexpr uintptr_t CPortraitObjectController_PortraitObjects_count = 0x287f8c4;
@@ -40,9 +44,22 @@ namespace rt {
     // the CGuiGraphics passed to UpdatePortrait: the mouse pointer in the same GUI units
     inline constexpr std::ptrdiff_t CGuiGraphics_mouse_x = 0x350;      // float
     inline constexpr std::ptrdiff_t CGuiGraphics_mouse_y = 0x354;      // float
-    inline constexpr std::ptrdiff_t CGuiGraphics_width = 0x28;         // int, size of the GUI in GUI units
+    inline constexpr std::ptrdiff_t CGuiGraphics_width = 0x28;         // int, size of the window in pixels (the origin of the GUI's world is its middle)
     inline constexpr std::ptrdiff_t CGuiGraphics_height = 0x2C;        // int
+    inline constexpr std::ptrdiff_t CGuiGraphics_gui_width = 0x30;     // int, size of the GUI in GUI units: the pixels divided by the UI scale
+    inline constexpr std::ptrdiff_t CGuiGraphics_gui_height = 0x34;    // int
 }  // namespace rt
+
+namespace rt_settings {
+    // floats in the settings object, 0..100 as on the sliders; the effective volume of a sound is master/100 * dev_master/100 * its category/100
+    inline constexpr std::ptrdiff_t master = 0x174;
+    inline constexpr std::ptrdiff_t dev_master = 0x178;  // a hidden multiplier, 75 by default
+    inline constexpr std::ptrdiff_t music = 0x180;
+    inline constexpr std::ptrdiff_t sfx = 0x17c;  // the "Effects" category, where the portraits' greeting sounds are
+    inline constexpr std::ptrdiff_t ambient = 0x184;
+    inline constexpr std::ptrdiff_t voice = 0xa5c;  // the "Voice" category: advisor and event speech
+    inline constexpr std::ptrdiff_t tts = 0xa60;
+}  // namespace rt_settings
 
 namespace vt {
     // virtual void GetSize(this, int out[2]): the width and height the GUI draws the object at (sprite size times scale)

@@ -41,10 +41,18 @@ scale). [V]
 
 | Offset | What | |
 |---|---|---|
-| +0x28 / +0x2C | int: the size of the GUI in GUI units (1920 x 1080 at UI scale 1 in a 1080p window) | [G] |
-| +0x350 / +0x354 | float: the mouse pointer, in GUI units measured from the top-left corner (equal to client pixels at UI scale 1) | [G] |
+| +0x28 / +0x2C | int: the size of the window in pixels (1920 x 1080 here) | [G][V] |
+| +0x30 / +0x34 | int: the size of the GUI in GUI units, the pixels divided by the UI scale (equal to the above at UI scale 1) | [V] |
+| +0x8C / +0x90 | float: the UI scale (`gui_scale`, 0.5 to 1.5 at 1080p, fixed for the session) and the safe ratio (fullscreen and borderless only) | [V] |
+| +0x7C / +0x80, +0x84 / +0x88 | GUI units per pixel (about 1/scale) and pixels per GUI unit (about the scale) | [V] |
+| +0x2F4 / +0x2F0, +0x300 / +0x304 | the safe viewport's width and height in pixels, and its offsets from the window's corner | [V] |
+| +0x350 / +0x354 | float: the mouse pointer, in GUI units from the top-left corner (an integer-valued float: `(client pixel - viewport offset) / viewport size * GUI size`, rounded) | [G][V] |
 
-Not checked: a UI scale other than 1 (the pointer is assumed to be in GUI units there too).
+The world space of `CPortraitObject +0x68` and of the `Render` matrix has its origin in the middle of the *window in pixels* but its units
+are GUI units, y up (`ortho(-W/2, GUIw-W/2, H/2-GUIh, H/2)`): GUI x = world x + W/2 with W the pixel width (`+0x28`), not `GUIw/2`.
+GUI units to client pixels: multiply by `W/GUIw` (the viewport offsets are zero unless the safe ratio is below 1). The UI scale and the
+safe ratio were not changed in the running game; the formulas are from the disassembly of `CGuiGraphics::Init` (0x1C06800) and
+`CGui::HandelInput` (0x1C0A340).
 
 ## Portrait definitions
 
@@ -58,12 +66,30 @@ Not checked: a UI scale other than 1 (the pointer is assumed to be in GUI units 
 - The definition table (key -> `SPortraitCharacterLayer*`) is at database + 0x1CE8; the global `CPortraitDatabase*` is at RVA
   0x3157538. Not used by the plugin: the object already holds the key.
 
+## Sound
+
+The engine has its own mixer (an SDL audio callback), not FMOD. The categories are `Weapon`, `Effects`, `Voice`, `Ambient` and `TTS`.
+`CGameApplication::UpdateAudioVolume` (0x1BA0A0, found as the only function that names `Effects`, `Ambient`, `Voice` and `TTS`) copies the
+sliders of the settings object into the mixer every frame: `master_eff = master/100 * dev_master/100`, a category's volume is its slider /
+100. The settings object (`sdk::glob::CSettings`) holds them as floats 0..100: master, `dev_master_volume` (hidden, 75 by default), music,
+`sound_fx_volume` (the `Effects` category), ambient, `voice_volume` (advisor and event speech), `tts_volume`; `locate.py` reads the offsets
+from `UpdateAudioVolume`'s code. The settings file is written only on Apply, so the plugin reads the object. The game does not mute when the
+window loses focus. [V]
+
+## Greeting sounds
+
+`CPortraitObject::GetGreetingSoundEffect` (found as the function that logs `Missing sound effect: %s`, works on the portrait key and whose
+callers hand its result on at once) returns the sound of the portrait's `greeting_sound` (category `Effects`), or null; three callers play it:
+the diplomacy window opening, an incoming diplomatic action, the species preview. A null result is handled by them (the original returns it
+when the sound is missing), so the plugin returns null to replace the sound. It runs on the game's main thread. [V]
+
 ## What the plugin hooks
 
 | Function | RVA | Why |
 |---|---|---|
 | `CPortraitObject::UpdatePortrait` | 0xFB1280 | paint the Live2D frame over the render target after the engine rendered it; found by the string `...portraitobject.cpp:467` |
 | `CPortraitObject::Render` | 0xFAD5B0 | learn where the GUI draws each portrait and get the `CGuiGraphics`; found by the string `Invalid alternate sprite configuration index [%i], must be in range [%i, %i)` |
+| `CPortraitObject::GetGreetingSoundEffect` | 0xFB3CE0 | the `greeting` event, and replacing the game's greeting sound; found as described under Greeting sounds |
 
 ## Layout constants (not found by a fingerprint)
 

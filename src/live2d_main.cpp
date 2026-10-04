@@ -62,6 +62,10 @@ void WriteDefaultIni(const std::string& path) {
               "model_cache_mb=512\n"
               "; 2 = draw the models at twice the size and average down (crisper fine lines, costs little); 1 = off\n"
               "supersample=2\n"
+              "; the voice follows the game's own sound settings (master and the slider named here: voice, effects, or none = only `volume`)\n"
+              "volume_channel=voice\n"
+              "; 1 = silent while the game window is not in front (the game itself keeps playing then)\n"
+              "mute_in_background=0\n"
               "audio=1\n"
               "volume=0.8\n", f);
         fclose(f);
@@ -132,6 +136,9 @@ l2d::Settings ReadIni(const std::string& path) {
     }
     s.interactions = GetPrivateProfileIntA("live2d", "interactions", 1, path.c_str()) != 0;
     s.audio = GetPrivateProfileIntA("live2d", "audio", 1, path.c_str()) != 0;
+    s.volume_channel = IniString("volume_channel", path);
+    if (s.volume_channel != "effects" && s.volume_channel != "none") s.volume_channel = "voice";
+    s.mute_in_background = GetPrivateProfileIntA("live2d", "mute_in_background", 0, path.c_str()) != 0;
     s.supersample = GetPrivateProfileIntA("live2d", "supersample", 2, path.c_str()) >= 2 ? 2 : 1;
     s.model_cache_mb = GetPrivateProfileIntA("live2d", "model_cache_mb", 512, path.c_str());
     s.volume = IniFloat("volume", 0.8f, path);
@@ -191,6 +198,7 @@ DWORD WINAPI Worker(LPVOID) {
             first = false;
         }
         if (changed || ++ticks % 15 == 0) l2d::Log("%s", l2d::StatsLine().c_str());
+        l2d::UpdateVoiceVolume(s);
         if (WaitForSingleObject(g_unload_event, 2000) == WAIT_OBJECT_0) break;
     }
     l2d::Log("unload requested: %s", l2d::StatsLine().c_str());
