@@ -4,7 +4,8 @@ What it makes, the way a real portrait mod would:
   * gfx/portraits/portraits/zz_live2d_humans.txt registers ten new portraits (l2d_human_female_01..05, l2d_human_male_01..05) the usual way,
     each a copy of a vanilla human portrait (so a game without the plugin shows an ordinary human), and overrides the portrait group `human`
     so that leaders and rulers pick from one subset of them, pops from another and species from all (the group syntax of the game:
-    `add = { trigger = ... portraits = { ... } }` per scope);
+    `add = { trigger = ... portraits = { ... } }` per scope; the first entry of each scope is a `set`, which drops what vanilla listed:
+    a group defined in several files is merged, so with `add` alone the vanilla portraits would still be picked);
   * gfx/portraits/live2d/00_live2d_humans.txt (read by the plugin, not by the game) says which of the new portraits are Live2D, with
     which model, framing, events, voice lines and expression;
   * gfx/live2d/ holds the models (DXT5 textures, see l2d_pack), sound/ the voice lines.
@@ -65,10 +66,11 @@ def vanilla_entry(text, key):
 
 def group_text():
     def gender_adds(trigger_female, trigger_male, numbers):
-        def add(trigger, gender):
+        def entry(verb, trigger, gender):
             keys = "\n".join(f"\t\t\t\t\t{new_key('human_' + gender + '_%02d' % n)}" for n in numbers)
-            return f"\t\t\tadd = {{\n\t\t\t\ttrigger = {{\n{trigger}\n\t\t\t\t}}\n\t\t\t\tportraits = {{\n{keys}\n\t\t\t\t}}\n\t\t\t}}\n"
-        return add(trigger_male, "male") + add(trigger_female, "female")
+            return f"\t\t\t{verb} = {{\n\t\t\t\ttrigger = {{\n{trigger}\n\t\t\t\t}}\n\t\t\t\tportraits = {{\n{keys}\n\t\t\t\t}}\n\t\t\t}}\n"
+        # `set` in front: the game drops the entries earlier files (vanilla) gave this scope, then the `add` that follows adds to ours only
+        return entry("set", trigger_male, "male") + entry("add", trigger_female, "female")
 
     ruler_male = "\t\t\t\t\truler = { OR = { gender = male gender = indeterminable } }"
     ruler_female = "\t\t\t\t\truler = { OR = { gender = female gender = indeterminable } }"

@@ -34,6 +34,9 @@ namespace rt {
     inline constexpr std::ptrdiff_t CPortraitObject_key = 0x818;
     // int32_t: 0 character, 1 character_large, 2 room, 3 empty_room, 4 character_without_room, 5 planet (read from SetPortrait and the constructor)
     inline constexpr std::ptrdiff_t CPortraitObject_kind = 0xA48;
+    inline constexpr std::ptrdiff_t CPortraitObject_scope_type = 0x248;  // u64: 0x100 leader, 0x800 species, 0x20 pop group
+    inline constexpr std::ptrdiff_t CPortraitObject_scope_id = 0x250;    // u32
+    inline constexpr std::ptrdiff_t CPortraitObject_group = 0x878;       // CString: the group or selector name the portrait was set from (`human`)
     // the object is a GUI sprite and keeps where the GUI drew it last frame (GUI units, not pixels)
     // float x, y: the lower-left corner, in GUI units around the middle of the screen with y up (checked against screenshots)
     inline constexpr std::ptrdiff_t CPortraitObject_pos = 0x68;

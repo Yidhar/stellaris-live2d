@@ -33,7 +33,8 @@ public:
     // its content with a frame of the model registered for that key. In the fallback mode (no registrations) a portrait object
     // gets a model the first time it is seen, the models handed out in turn. Each model advances and redraws at most `fps`
     // times a second, and only while one of its portraits is on screen; portraits of one model and size share the frame.
-    PaintResult Paint(const void* portrait, const char* key, int kind, ID3D11Texture2D* target, const D3D11_TEXTURE2D_DESC& desc);
+    // `scope` says what the engine picked the portrait for (`pop group #12 of human`); it only goes to the log.
+    PaintResult Paint(const void* portrait, const char* key, int kind, const char* scope, ID3D11Texture2D* target, const D3D11_TEXTURE2D_DESC& desc);
 
     // Whether the mod gives the portrait with this key a greeting action that replaces the game's own greeting sound.
     bool GreetingReplaced(const char* key);

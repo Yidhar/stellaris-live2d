@@ -133,6 +133,25 @@ know about leaders: more portraits and a group that lists them is all it takes t
 `scripts/make_human_mod.py` builds exactly that for the humans (ten new portraits, the `human` group overridden: leaders and rulers pick
 among the first three of each gender, pops among the last two, species among all five).
 
+**A group defined again is merged, not replaced; use `set` to replace.** (Read from the engine: `ReadTriggeredPortraitList` appends every
+`add` to the entries the scope already has, from earlier files, vanilla's included.) A mod that only writes `add` entries for `human`
+leaves vanilla's five portraits per gender in the pool next to its own: some leaders, pops and elites then keep an ordinary portrait,
+chosen by the engine from the merged list. The keyword `set` in place of `add` first deletes every entry the scope had collected so far
+(and empties the list being built when its trigger matches), so make the *first* entry of each scope a `set` and the rest `add`s:
+
+```
+pop = {
+	set = { trigger = { NOT = { species = { species_gender = female } } }  portraits = { l2d_human_male_04 l2d_human_male_05 } }
+	add = { trigger = { NOT = { species = { species_gender = male } } }    portraits = { l2d_human_female_04 l2d_human_female_05 } }
+}
+```
+
+`set` only clears its own scope (`pop`, `leader`, `ruler`, `species`, `game_setup` are separate lists), and `default =` is replaced as it is.
+Which entry of the list a leader or pop gets is the engine's: a pseudo-random number seeded from the object, modulo the list length, so it stays
+the same for the same leader (and changes for everyone when the list's length changes). The plugin logs the scope each portrait was picked
+for the first time it sees a key, e.g. `portrait key human_female_01 575x380 kind 0 (pop group #15 of human) -> not registered, the game
+draws it`: a key without the mod's prefix in that line is one the mod's group did not replace.
+
 ## Making a mod
 
 1. Pack each model's textures to DXT5 (the format of the game's own textures; a quarter of the video memory, no mip building at

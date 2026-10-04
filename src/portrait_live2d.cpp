@@ -584,7 +584,7 @@ bool Live2DPainter::Ready() const {
     return !impl_->slots.empty();
 }
 
-PaintResult Live2DPainter::Paint(const void* portrait, const char* key, int kind, ID3D11Texture2D* target, const D3D11_TEXTURE2D_DESC& desc) {
+PaintResult Live2DPainter::Paint(const void* portrait, const char* key, int kind, const char* scope, ID3D11Texture2D* target, const D3D11_TEXTURE2D_DESC& desc) {
     Impl& d = *impl_;
     int fps, supersample;
     bool interactions, audio;
@@ -623,8 +623,8 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, int kind
         if (!key[0]) return PaintResult::Skipped;  // planets and other objects that show no portrait have no key
         const std::string k = key;
         const auto it = d.gpu_by_key.find(k);
-        char id[96];
-        snprintf(id, sizeof id, "%s %ux%u kind %d", key, desc.Width, desc.Height, kind);
+        char id[224];
+        snprintf(id, sizeof id, "%s %ux%u kind %d (%s)", key, desc.Width, desc.Height, kind, scope);
         if (d.seen.insert(id).second)
             Log("live2d: portrait key %s -> %s", id,
                 it == d.gpu_by_key.end() ? "not registered, the game draws it" : d.gpu_slots[d.gpu_presentations[it->second]->slot].slot->name.c_str());

@@ -176,10 +176,9 @@ void FillPattern(uint32_t w, uint32_t h, bool bgra, uint32_t seed, uint32_t fram
 
 // The key of the portrait the engine shows in this object (`human_female_01`), copied into `out`; empty when unreadable.
 // An engine CString keeps up to 15 characters inline, longer ones behind a pointer.
-void ReadPortraitKey(const uint8_t* portrait, char* out, size_t cap) {
+void ReadCString(const uint8_t* str, char* out, size_t cap) {
     out[0] = 0;
     __try {
-        const uint8_t* str = portrait + sdk::rt::CPortraitObject_key;
         const uint64_t capacity = *(const uint64_t*)(str + sdk::cstring::kCapacity);
         const uint64_t length = *(const uint64_t*)(str + sdk::cstring::kLength);
         const char* data = capacity >= sdk::cstring::kInlineCapacity ? *(const char* const*)(str + sdk::cstring::kInline)
@@ -194,6 +193,31 @@ void ReadPortraitKey(const uint8_t* portrait, char* out, size_t cap) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         out[0] = 0;
     }
+}
+
+void ReadPortraitKey(const uint8_t* portrait, char* out, size_t cap) { ReadCString(portrait + sdk::rt::CPortraitObject_key, out, cap); }
+
+// What the portrait was picked for, as text for the log: `pop group #12 of human`, `leader #3 of human`, `species #1 of human`.
+void DescribePortraitScope(const uint8_t* portrait, char* out, size_t cap) {
+    out[0] = 0;
+    uint64_t type = 0;
+    uint32_t id = 0;
+    __try {
+        type = *(const uint64_t*)(portrait + sdk::rt::CPortraitObject_scope_type);
+        id = *(const uint32_t*)(portrait + sdk::rt::CPortraitObject_scope_id);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return;
+    }
+    char group[64];
+    ReadCString(portrait + sdk::rt::CPortraitObject_group, group, sizeof group);
+    const char* name = type == 0x100 ? "leader" : type == 0x800 ? "species" : type == 0x20 ? "pop group" : nullptr;
+    char what[32];
+    if (!name) {
+        snprintf(what, sizeof what, "scope 0x%llX", (unsigned long long)type);
+        name = what;
+    }
+    if (id != 0xFFFFFFFFu) snprintf(out, cap, "%s #%u of %s", name, id, group[0] ? group : "?");
+    else snprintf(out, cap, "%s of %s", name, group[0] ? group : "?");
 }
 
 // Where the GUI draws portraits. The engine's GUI draw (CPortraitObject::Render, once per drawn portrait per frame) is hooked:
@@ -314,7 +338,9 @@ void PaintPortrait(void* portrait) {
     if (g_mode.load() == 2) {
         char key[96];
         ReadPortraitKey(base, key, sizeof key);
-        switch (Painter().Paint(portrait, key, ReadPortraitKind(base), tex, desc)) {
+        char scope[112];
+        DescribePortraitScope(base, scope, sizeof scope);
+        switch (Painter().Paint(portrait, key, ReadPortraitKind(base), scope, tex, desc)) {
         case PaintResult::Painted: ++g_painted; break;
         case PaintResult::Skipped: ++g_unregistered; break;
         default: ++g_l2d_failed; break;
