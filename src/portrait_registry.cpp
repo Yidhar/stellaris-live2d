@@ -96,7 +96,7 @@ void ReadEntry(const pdx::Node& e, const fs::path& root, const std::string& file
     p.live2d = e.Bool("live2d");
     p.spine = e.Bool("spine");
     p.unmirror = e.Bool("live2d_unmirror", true);
-    p.scale = std::clamp((float)e.Num("live2d_scale", 1.0), 0.1f, 10.0f);
+    p.view.scale = std::clamp((float)e.Num("live2d_scale", 1.0), 0.1f, 10.0f);
     p.source = file + ":" + std::to_string(e.line);
     if (!p.live2d && !p.spine) return;
     const std::string model = e.Str(p.live2d ? "live2d_model" : "spine_model");
@@ -105,12 +105,32 @@ void ReadEntry(const pdx::Node& e, const fs::path& root, const std::string& file
         return;
     }
     p.model = (root / fs::u8path(model)).lexically_normal().string();
-    if (const pdx::Node* v = e.Find("live2d_view"); v && v->block) {
-        p.auto_view = v->Bool("auto", !v->Find("x"));
-        p.auto_body = (float)v->Num("body", p.auto_body);
-        p.view_x = (float)v->Num("x", p.view_x);
-        p.view_y = (float)v->Num("y", p.view_y);
-        p.view_h = (float)v->Num("height", p.view_h);
+    auto read_view = [&](const pdx::Node& v, ViewSpec* spec) {
+        spec->auto_view = v.Bool("auto", !v.Find("x"));
+        spec->body = (float)v.Num("body", spec->body);
+        spec->x = (float)v.Num("x", spec->x);
+        spec->y = (float)v.Num("y", spec->y);
+        spec->h = (float)v.Num("height", spec->h);
+        spec->scale = std::clamp((float)v.Num("scale", spec->scale), 0.1f, 10.0f);
+    };
+    if (const pdx::Node* v = e.Find("live2d_view"); v && v->block) read_view(*v, &p.view);
+    for (const pdx::Node& c : e.children) {
+        if (!c.block || c.key.rfind("live2d_view_", 0) != 0) continue;
+        ViewSpec spec = p.view;  // what a variant does not say is the default's
+        spec.selector = c.key.substr(12);
+        static const char* const kinds[] = { "character", "character_large", "room", "empty_room", "character_without_room" };
+        for (int k = 0; k < 5; ++k)
+            if (spec.selector == kinds[k]) spec.kind = k;
+        int w = 0, h = 0;
+        if (spec.kind < 0 && sscanf(spec.selector.c_str(), "%dx%d", &w, &h) == 2 && w > 0 && h > 0) {
+            spec.width = w;
+            spec.height = h;
+        } else if (spec.kind < 0) {
+            reg->messages.push_back(p.source + ": portrait " + p.key + ": `" + c.key + "` names no portrait kind or size (character, character_large, room, empty_room, character_without_room or WxH); ignored");
+            continue;
+        }
+        read_view(c, &spec);
+        p.views.push_back(std::move(spec));
     }
     if (const pdx::Node* a = e.Find("live2d_actions"); a && a->block) {
         for (const pdx::Node& c : a->children) {

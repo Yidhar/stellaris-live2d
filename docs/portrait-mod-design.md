@@ -46,6 +46,7 @@ portraits = {
 		live2d_model = "gfx/live2d/pa15/model.model3.json"     # inside the mod
 		live2d_view = { auto = yes  body = 0.46 }               # or { x = 0.44  y = 0.19  height = 0.26 }
 		live2d_scale = 1.0         # magnifies the framed part around its centre: 1.25 shows a quarter less of the model
+		live2d_view_character_large = { auto = yes  body = 0.6 }   # another framing for one kind of portrait, or for one size (live2d_view_800x400)
 		live2d_actions = {
 			mouse_follow = { enabled = yes  strength = 0.6 }
 			click      = { motion_group = "touch*" }                           # the left button went down on the picture
@@ -63,6 +64,7 @@ portraits = {
 | `live2d`, `spine` | booleans: which runtime draws the portrait. Neither: the game draws it |
 | `live2d_model` | path of the `model3.json` relative to the mod root |
 | `live2d_view` | the part of the model canvas shown, as fractions of the canvas. `auto = yes` works it out from the model's geometry: it starts a little above the head and covers `body` (default `0.46`) of the figure's height. Otherwise `x`, `y` (centre from the left and from the top) and `height` |
+| `live2d_view_<kind>`, `live2d_view_<W>x<H>` | another framing for one kind of portrait (`character`, `character_large`, `room`, `empty_room`, `character_without_room`: what the engine says the portrait is for; the plugin log shows it for every key) or for one size of picture. A size beats a kind beats `live2d_view`. A block takes `auto`, `body`, `x`, `y`, `height` and `scale`; what it leaves out is the default's |
 | `live2d_scale` | a fixed magnification of the framed part, around its centre (0.1 to 10, default 1): the framed height is divided by it, so 1.3 shows a bit more than three quarters of what `live2d_view` frames. A model is loaded once however many portrait keys use it, with whatever views and scales they give it; it also has one animation state, so two keys of one model that are on screen together show the same pose. There is no interactive zoom: it was left out as not needed |
 | `live2d_unmirror` | the GUI mirrors some portraits (the council does for some slots), which reverses text and logos in a model. With this on (the default) the plugin draws the picture flipped in those portraits, so the GUI's mirror turns it back; the mouse follow accounts for it |
 | `live2d_actions.mouse_follow` | the model looks towards the mouse pointer (`strength` 0..1): head turn (`ParamAngleX/Y/Z`), a little body lean (`ParamBodyAngleX`) and the eyes (`ParamEyeBallX/Y`), the values Cubism's own samples drive for a drag, eased over about 0.15 s and added on top of the motion every frame. Back to the middle while the game is not the foreground window. The ini key `interactions=0` turns all interactions and events off |

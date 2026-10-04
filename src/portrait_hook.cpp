@@ -266,6 +266,16 @@ void BuildPortraitFrame(void* portrait, PortraitFrame* out) {
     if (void* gui = g_gui_graphics.load()) out->has_mouse = ReadGuiMouse(gui, &out->mouse_x, &out->mouse_y, &out->gui_w, &out->gui_h);
 }
 
+// What the portrait is for: 0 character, 1 character_large, 2 room, 3 empty_room, 4 character_without_room, 5 planet; -1 when unreadable.
+int ReadPortraitKind(const uint8_t* portrait) {
+    __try {
+        const int kind = *(const int32_t*)(portrait + sdk::rt::CPortraitObject_kind);
+        return kind >= 0 && kind <= 5 ? kind : -1;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
 // One portrait: after the engine rendered it, overwrite its render target.
 void PaintPortrait(void* portrait) {
     const auto* base = (const uint8_t*)portrait;
@@ -299,7 +309,7 @@ void PaintPortrait(void* portrait) {
     if (g_mode.load() == 2) {
         char key[96];
         ReadPortraitKey(base, key, sizeof key);
-        switch (Painter().Paint(portrait, key, tex, desc)) {
+        switch (Painter().Paint(portrait, key, ReadPortraitKind(base), tex, desc)) {
         case PaintResult::Painted: ++g_painted; break;
         case PaintResult::Skipped: ++g_unregistered; break;
         default: ++g_l2d_failed; break;

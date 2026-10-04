@@ -27,11 +27,13 @@ public:
     void Configure(const Settings& s, const Registry& registry);
     bool Ready() const;
 
+    // `kind` is what the portrait is for (0 character, 1 character_large, 2 room, 3 empty_room, 4 character_without_room; -1 unknown): the
+    // framing of the model can depend on it and on the size of `target`.
     // After the engine rendered `target` (the render target of `portrait`, which shows the portrait with key `key`), replaces
     // its content with a frame of the model registered for that key. In the fallback mode (no registrations) a portrait object
     // gets a model the first time it is seen, the models handed out in turn. Each model advances and redraws at most `fps`
     // times a second, and only while one of its portraits is on screen; portraits of one model and size share the frame.
-    PaintResult Paint(const void* portrait, const char* key, ID3D11Texture2D* target, const D3D11_TEXTURE2D_DESC& desc);
+    PaintResult Paint(const void* portrait, const char* key, int kind, ID3D11Texture2D* target, const D3D11_TEXTURE2D_DESC& desc);
 
     // Releases everything. Only once the portrait hook is removed and no Paint can be running.
     void Shutdown();

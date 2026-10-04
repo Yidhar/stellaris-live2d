@@ -49,6 +49,12 @@ void RectPointToModel(const View& view, const Model& m, UINT width, UINT height,
     *y = ((1.0f - fy) * ch - m.canvas_origin.y) / m.pixels_per_unit;
 }
 
+std::string DescribeView(const ViewSpec& v) {
+    char buf[160];
+    snprintf(buf, sizeof buf, "%d %.3f %.3f %.3f %.3f z%.3f", (int)v.auto_view, v.body, v.x, v.y, v.h, v.scale);
+    return buf;
+}
+
 bool SameName(const std::string& a, const std::string& b) {
     return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) { return std::tolower((unsigned char)x) == std::tolower((unsigned char)y); });
 }
@@ -144,13 +150,16 @@ struct ActionState {
 };
 enum { kStateClick = 0, kStateHover = 1, kStateAppear = 2, kStateIdle = 3, kStateAreas = 4 };
 
+// One framing of a presentation: the default, or one for a kind of portrait or a size of picture.
+struct ViewVariant {
+    ViewSpec spec;
+    View view;                  // the view in use: worked out from the loaded model's bounds when automatic
+    uint64_t view_serial = 0;   // the loading of the model that `view` was worked out for
+};
+
 struct Presentation {
     int slot = -1;  // index into the slots
-    bool auto_view = false;
-    float body = 0.46f, scale = 1.0f;
-    View base_view;                 // the view as given (when it is not automatic)
-    View view;                      // the view in use: worked out from the loaded model's bounds when automatic
-    uint64_t view_serial = 0;       // the loading of the model that `view` was worked out for
+    std::vector<ViewVariant> variants;  // [0] the default, then the ones for a kind or size
     MouseFollow follow;
     EventAction click, hover, appear, idle;
     std::vector<std::pair<std::string, EventAction>> click_areas;
@@ -380,8 +389,8 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
     // What to load: every model once (the mods' portrait keys can share one), and for every portrait key how it presents its model.
     struct PresWant {
         int model = -1;  // index into `paths`
-        bool auto_view = false;
-        float body = 0.46f, x = 0, y = 0, h = 0, scale = 1.0f;
+        ViewSpec view;
+        std::vector<ViewSpec> views;
         bool unmirror = true;
         MouseFollow follow;
         EventAction click, hover, appear, idle;
@@ -401,12 +410,8 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         if (!e.live2d) continue;  // spine entries are read but not drawn yet
         PresWant w;
         w.model = model_index(e.model);
-        w.auto_view = e.auto_view;
-        w.body = e.auto_body;
-        w.x = e.view_x;
-        w.y = e.view_y;
-        w.h = e.view_h;
-        w.scale = e.scale;
+        w.view = e.view;
+        w.views = e.views;
         w.unmirror = e.unmirror;
         w.follow = e.mouse_follow;
         w.click = e.click;
@@ -415,9 +420,10 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         w.idle = e.idle;
         w.click_areas = e.click_areas;
         char id[256];
-        snprintf(id, sizeof id, "%d|%d %.3f %.3f %.3f %.3f z%.3f|m%d f%.2f u%d|", w.model, (int)w.auto_view, w.body, w.x, w.y, w.h, w.scale,
-                 (int)e.mouse_follow.enabled, e.mouse_follow.strength, (int)e.unmirror);
-        w.identity = std::string(id) + "click " + Describe(e.click) + "|hover " + Describe(e.hover) + "|appear " + Describe(e.appear) + "|idle " +
+        snprintf(id, sizeof id, "%d|m%d f%.2f u%d|", w.model, (int)e.mouse_follow.enabled, e.mouse_follow.strength, (int)e.unmirror);
+        w.identity = std::string(id) + DescribeView(w.view);
+        for (const ViewSpec& v : w.views) w.identity += "|view " + v.selector + " " + DescribeView(v);
+        w.identity += std::string("|click ") + Describe(e.click) + "|hover " + Describe(e.hover) + "|appear " + Describe(e.appear) + "|idle " +
                      Describe(e.idle);
         for (const auto& [name, action] : e.click_areas) w.identity += "|click_" + name + " " + Describe(action);
         int index = -1;
@@ -432,15 +438,15 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         for (const Settings::ModelEntry& e : s.models) {
             PresWant w;
             w.model = model_index(e.path);
-            w.auto_view = e.auto_view;
-            w.body = e.auto_body;
-            w.x = e.view_x;
-            w.y = e.view_y;
-            w.h = e.view_h;
+            w.view.auto_view = e.auto_view;
+            w.view.body = e.auto_body;
+            w.view.x = e.view_x;
+            w.view.y = e.view_y;
+            w.view.h = e.view_h;
             w.unmirror = false;
-            char id[160];
-            snprintf(id, sizeof id, "list %zu|%d|%d %.3f %.3f %.3f %.3f", wants.size(), w.model, (int)w.auto_view, w.body, w.x, w.y, w.h);
-            w.identity = id;
+            char id[64];
+            snprintf(id, sizeof id, "list %zu|%d|", wants.size(), w.model);
+            w.identity = std::string(id) + DescribeView(w.view);
             wants.push_back(w);
         }
     }
@@ -531,12 +537,8 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
     for (const PresWant& w : wants) {
         auto p = std::make_shared<Presentation>();
         p->slot = w.model;
-        p->auto_view = w.auto_view;
-        p->body = w.body;
-        p->scale = w.scale;
-        p->base_view = { w.x, w.y, w.h };
-        p->view = p->base_view;
-        p->view.height /= w.scale;  // live2d_scale: magnify around the middle of the framed part
+        p->variants.push_back({ w.view, {}, 0 });
+        for (const ViewSpec& v : w.views) p->variants.push_back({ v, {}, 0 });
         p->follow = w.follow;
         p->click = w.click;
         p->hover = w.hover;
@@ -577,7 +579,7 @@ bool Live2DPainter::Ready() const {
     return !impl_->slots.empty();
 }
 
-PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Texture2D* target, const D3D11_TEXTURE2D_DESC& desc) {
+PaintResult Live2DPainter::Paint(const void* portrait, const char* key, int kind, ID3D11Texture2D* target, const D3D11_TEXTURE2D_DESC& desc) {
     Impl& d = *impl_;
     int fps;
     bool interactions, audio;
@@ -616,7 +618,7 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
         const std::string k = key;
         const auto it = d.gpu_by_key.find(k);
         char id[96];
-        snprintf(id, sizeof id, "%s %ux%u", key, desc.Width, desc.Height);
+        snprintf(id, sizeof id, "%s %ux%u kind %d", key, desc.Width, desc.Height, kind);
         if (d.seen.insert(id).second)
             Log("live2d: portrait key %s -> %s", id,
                 it == d.gpu_by_key.end() ? "not registered, the game draws it" : d.gpu_slots[d.gpu_presentations[it->second]->slot].slot->name.c_str());
@@ -728,11 +730,24 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
         gs.stepped = 0;
         gs.loaded_serial = loaded->serial;
     }
-    if (pr.view_serial != loaded->serial) {  // the view of an automatic framing comes from the loaded model's bounds
-        pr.view = pr.base_view;
-        if (pr.auto_view) Model::ViewFromBounds(loaded->bounds, pr.body, &pr.view.center_x, &pr.view.center_y, &pr.view.height);
-        pr.view.height /= pr.scale;
-        pr.view_serial = loaded->serial;
+    // the framing for this portrait: a size beats a kind beats the default
+    size_t variant_index = 0;
+    int specificity = 0;
+    for (size_t i = 1; i < pr.variants.size(); ++i) {
+        const ViewSpec& v = pr.variants[i].spec;
+        const int sp = (v.width && v.width == (int)desc.Width && v.height == (int)desc.Height) ? 2 : (v.kind >= 0 && v.kind == kind) ? 1 : 0;
+        if (sp > specificity) {
+            specificity = sp;
+            variant_index = i;
+        }
+    }
+    ViewVariant& variant = pr.variants[variant_index];
+    if (variant.view_serial != loaded->serial) {  // the view of an automatic framing comes from the loaded model's bounds
+        const ViewSpec& v = variant.spec;
+        variant.view = { v.x, v.y, v.h };
+        if (v.auto_view) Model::ViewFromBounds(loaded->bounds, v.body, &variant.view.center_x, &variant.view.center_y, &variant.view.height);
+        variant.view.height /= v.scale;  // live2d_scale: magnify around the middle of the framed part
+        variant.view_serial = loaded->serial;
     }
 
     // Time moves in fixed steps of 1/fps. Time since the last call piles up in `pending` and a step is taken when a whole
@@ -795,7 +810,7 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
             if (!pr.click_areas.empty()) {  // which part of the model was clicked
                 const float u = PortraitMirrored(portrait) && !flip ? 1.0f - ev.u : ev.u;
                 float mx, my;
-                RectPointToModel(pr.view, character.model(), desc.Width, desc.Height, u, ev.v, &mx, &my);
+                RectPointToModel(variant.view, character.model(), desc.Width, desc.Height, u, ev.v, &mx, &my);
                 const std::string area = character.HitTest(mx, my);
                 for (size_t i = 0; i < pr.click_areas.size() && !area.empty(); ++i) {
                     if (SameName(pr.click_areas[i].first, area) && pr.click_areas[i].second.enabled) {
@@ -845,7 +860,7 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
     }
 
     // frames are kept per presentation (its view differs) and per flip, because a model can be shown mirrored and not mirrored at once
-    const uint64_t frame_key = ((uint64_t)desc.Width << 40) | ((uint64_t)desc.Height << 16) | ((uint64_t)(flip ? 1 : 0) << 15) | (uint64_t)desc.Format;
+    const uint64_t frame_key = ((uint64_t)variant_index << 56) | ((uint64_t)desc.Width << 40) | ((uint64_t)desc.Height << 16) | ((uint64_t)(flip ? 1 : 0) << 15) | (uint64_t)desc.Format;
     const std::pair<int, uint64_t> frame_id(pres_index, frame_key);
     Frame& f = gs.frames[frame_id];
     if (!f.texture) {
@@ -869,7 +884,7 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
     dev->GetImmediateContext(&immediate);
     if (f.serial != d.serial) {
         const uint64_t t0 = Ticks();
-        View view = pr.view;
+        View view = variant.view;
         view.flip_x = flip;
         d.renderer->Draw(d.deferred.Get(), *loaded->gpu, character.model(), f.rtv.Get(), desc.Width, desc.Height, view);
         ComPtr<ID3D11CommandList> list;

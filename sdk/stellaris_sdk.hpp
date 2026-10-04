@@ -28,6 +28,8 @@ namespace rt {
     inline constexpr std::ptrdiff_t CPortraitObject_render_target = 0x530;  // TextureGFX*, null until first rendered
     // engine CString: the key of the `portraits = {}` entry this object shows (empty or "debug" until a setter ran)
     inline constexpr std::ptrdiff_t CPortraitObject_key = 0x818;
+    // int32_t: 0 character, 1 character_large, 2 room, 3 empty_room, 4 character_without_room, 5 planet (read from SetPortrait and the constructor)
+    inline constexpr std::ptrdiff_t CPortraitObject_kind = 0xA48;
     // the object is a GUI sprite and keeps where the GUI drew it last frame (GUI units, not pixels)
     // float x, y: the lower-left corner, in GUI units around the middle of the screen with y up (checked against screenshots)
     inline constexpr std::ptrdiff_t CPortraitObject_pos = 0x68;

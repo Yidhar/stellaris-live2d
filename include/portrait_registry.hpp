@@ -11,6 +11,9 @@
 //     live2d_unmirror = yes             (default) the GUI mirrors some portraits (the council does); the plugin draws them flipped
 //     live2d_view = { auto = yes  body = 0.46 }      or { x = 0.44  y = 0.19  height = 0.26 }, fractions of the model canvas
 //     live2d_scale = 1.0                magnifies the framed part around its centre: 1.25 shows a quarter less of the model
+//     live2d_view_character_large = { ... }    another framing for one kind of portrait (character, character_large, room, empty_room,
+//     live2d_view_800x400 = { ... }            character_without_room) or for one size of picture; a size beats a kind beats the default.
+//                                              Each takes auto, body, x, y, height and scale (scale defaults to live2d_scale)
 //     live2d_actions = {
 //         mouse_follow = { enabled = yes  strength = 0.6 }
 //         click  = { motion_group = "touch*" ... }     what happens on each event, see EventAction; events: click (anywhere on the picture),
@@ -71,15 +74,24 @@ inline std::string Describe(const EventAction& a) {
     return s;
 }
 
+// How a portrait is framed: the part of the model canvas it shows. One per kind of portrait or picture size, plus the default.
+struct ViewSpec {
+    std::string selector;   // empty: the default; else a kind name (character_large) or a size (800x400)
+    int kind = -1;          // the kind selector as a number (see Paint), -1 when it is not a kind
+    int width = 0, height = 0;  // the size selector
+    bool auto_view = true;
+    float body = 0.46f;
+    float x = 0.44f, y = 0.19f, h = 0.26f;
+    float scale = 1.0f;
+};
+
 struct PortraitEntry {
     std::string key;            // the portrait key (`human_female_01`), what the engine reports for a portrait object
     bool live2d = false, spine = false;
     bool unmirror = true;       // draw the picture flipped where the GUI mirrors the portrait, so it comes out the right way round
     std::string model;          // absolute path of the model3.json
-    bool auto_view = true;
-    float auto_body = 0.46f;
-    float view_x = 0.44f, view_y = 0.19f, view_h = 0.26f;
-    float scale = 1.0f;         // live2d_scale: >1 shows a smaller part of the model, bigger
+    ViewSpec view;              // the default framing (with live2d_scale in `scale`)
+    std::vector<ViewSpec> views;  // the framings for one kind or size of portrait
     MouseFollow mouse_follow;
     EventAction click, hover, appear, idle;
     std::vector<std::pair<std::string, EventAction>> click_areas;  // by hit area name
