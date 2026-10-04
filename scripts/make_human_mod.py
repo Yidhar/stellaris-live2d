@@ -21,6 +21,10 @@ import json
 import os
 import re
 import shutil
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
+import motion_diff  # noqa: E402
 
 DOCS = os.path.join(os.path.expanduser("~"), "Documents", "Paradox Interactive", "Stellaris")
 GAME = os.environ.get("STELLARIS_DIR", r"E:\Program Files (x86)\Steam\steamapps\common\Stellaris")
@@ -37,6 +41,12 @@ ASSIGN = {
 # which of the new portraits each scope of the group picks from (numbers 01..05): leaders and rulers the first three, pops the last two,
 # species all of them
 SCOPES = {"game_setup": [1, 2, 3], "species": [1, 2, 3, 4, 5], "pop": [4, 5], "leader": [1, 2, 3], "ruler": [1, 2, 3]}
+# parameters of stage effects that every motion of a model plays besides the one found by tools/motion_diff.py in `login` (the black
+# curtain of this model is also keyed by its touch motions)
+EXTRA_IGNORE = {"d316_s11603": ["ParamHeiMu*"]}
+# the motion the portrait plays when it shows up: the model's login, except for a model whose login is a whole staged scene (photo frames, light
+# sweeps and a character switch, all keyed by parameters that cannot be told apart from the character's own), which plays a wait motion
+APPEAR = {"d351_s9001": "wait*"}
 # a model whose automatic crop is wrong gets its own
 VIEWS = {"d307_s4703": "x = 0.48 y = 0.49 height = 0.17"}
 # live2d_scale per portrait, to show the option: this one is magnified by 30 percent
@@ -91,7 +101,13 @@ def group_text():
     return out + "\t}\n}\n"
 
 
-def live2d_entry(key, model, sounds):
+def ignored_parameters(models_folder, model):
+    """The stage parameters of the model's login motion (found by tools/motion_diff.py) and the extra ones, for `live2d_ignore_parameters`."""
+    found = motion_diff.unique_to(os.path.join(models_folder, model, "model.model3.json"), "login")
+    return [pid for pid, _, _, stage in found if stage] + EXTRA_IGNORE.get(model, [])
+
+
+def live2d_entry(key, model, sounds, ignore):
     view = VIEWS.get(model)
     view = f"{{ {view} }}" if view else "{ auto = yes  body = 0.46 }"
     lines = " ".join(f'"{s}"' for s in sounds)
@@ -99,18 +115,20 @@ def live2d_entry(key, model, sounds):
     if key in VOICES:
         bound = " ".join(f'{group} = "sound/live2d_test/{name}"' for group, name in VOICES[key].items())
         say = f"  voices = {{ {bound} }}"
+    appear = APPEAR.get(model, "login")
     scale = f"\t\tlive2d_scale = {SCALES[key]}\n" if key in SCALES else ""
+    ignore_line = ("\t\tlive2d_ignore_parameters = { " + " ".join(f'"{p}"' for p in ignore) + " }\n") if ignore else ""
     return f"""\t{key} = {{
 \t\tlive2d = yes
 \t\tlive2d_unmirror = yes
-{scale}\t\tlive2d_model = "gfx/live2d/{model}/model.model3.json"
+{scale}{ignore_line}\t\tlive2d_model = "gfx/live2d/{model}/model.model3.json"
 \t\tlive2d_view = {view}
 \t\tlive2d_actions = {{
 \t\t\tmouse_follow = {{ enabled = yes  strength = 0.6 }}
 \t\t\tclick = {{ motion_group = "touch*"{say} }}
 \t\t\tclick_head = {{ motion_group = "touch*" expression = "smile"{say} }}
 \t\t\thover = {{ expression = "smile"  expression_hold = 1.5 }}
-\t\t\tappear = {{ motion_group = "wait*"  expression = "smile"  expression_hold = 2 }}
+\t\t\tappear = {{ motion_group = "{appear}"  expression = "smile"  expression_hold = 2 }}
 \t\t\tidle = {{ motion_group = "wait*"  interval = {{ 15 30 }} }}
 \t\t\tgreeting = {{ motion_group = "touch*"{say} }}
 \t\t}}
@@ -167,13 +185,14 @@ def main():
                 "# The Live2D side of them is in gfx/portraits/live2d/.\n\nportraits = {\n" + "\n".join(entries) + "\n}\n\n" + group_text())
 
     # the plugin's side
+    ignore = {m: ignored_parameters(a.models, m) for m in set(ASSIGN.values())}
     side = os.path.join(a.out, "gfx", "portraits", "live2d")
     os.makedirs(side)
     with open(os.path.join(side, "00_live2d_humans.txt"), "w", encoding="utf-8", newline="\n") as f:
         f.write("# Which of this mod's portraits are Live2D, and how. Read by stellaris_live2d.dll, not by the game.\n\n"
-                "portraits = {\n" + "".join(live2d_entry(new_key(k), m, sounds) for k, m in ASSIGN.items())
+                "portraits = {\n" + "".join(live2d_entry(new_key(k), m, sounds, ignore[m]) for k, m in ASSIGN.items())
                 + "\n\t# a leader a script or the empire designer gave one of the vanilla portraits by name is not drawn from the group, so the\n"
-                  "\t# vanilla keys get the same models\n" + "".join(live2d_entry(k, m, sounds) for k, m in ASSIGN.items()) + "}\n")
+                  "\t# vanilla keys get the same models\n" + "".join(live2d_entry(k, m, sounds, ignore[m]) for k, m in ASSIGN.items()) + "}\n")
 
     descriptor = ('version="0.2.0"\ntags={\n\t"Graphics"\n\t"Species"\n}\nname="Live2D Human Portraits (test)"\n'
                   'supported_version="v4.5.*"\n')

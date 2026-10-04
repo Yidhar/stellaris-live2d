@@ -26,6 +26,7 @@ int main(int argc, char** argv) {
     l2d::View view;
     std::vector<std::pair<std::string, float>> overrides;
     std::string motion_group;
+    std::vector<std::string> ignore_parameters;
     float play_time = 0.0f;
     bool physics = true;
     bool auto_view = false;
@@ -46,6 +47,7 @@ int main(int argc, char** argv) {
         else if (a == "--no-physics") physics = false;
         else if (a == "--supersample") supersample = atoi(next().c_str());
         else if (a == "--motion") motion_group = next();
+        else if (a == "--ignore") ignore_parameters.push_back(next());
         else if (a == "--time") play_time = (float)atof(next().c_str());
         else if (a == "--param") {
             const std::string kv = next();
@@ -75,7 +77,7 @@ int main(int argc, char** argv) {
     }
     if (play_time > 0.0f) {
         // run the character at 30 frames per second up to the requested time
-        if (!motion_group.empty() && !character.PlayMotion(motion_group, 0)) {
+        if (!motion_group.empty() && !character.PlayMotion(motion_group, 0, &ignore_parameters)) {
             fprintf(stderr, "no motion group %s\n", motion_group.c_str());
             return 1;
         }

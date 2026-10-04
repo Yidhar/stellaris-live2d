@@ -102,6 +102,8 @@ model's own `model3.json`; the mod only says which to play on which event.
 - **A demo mod** lives in its own repository, [stellaris-live2d-demo-mod](https://github.com/Yidhar/stellaris-live2d-demo-mod): the `human` portrait group
   replaced with ten Live2D portraits (a `set` for each scope, then `add`s), the vanilla keys bound too, and every event, voice line,
   view and scale option used once. It ships no models, since the ones it was made with are other people's art: bring your own.
+- The `login` motion of many models is a stage entrance (black curtain, camera zoom); `live2d_ignore_parameters` skips the curves of the
+  parameters you name, and `python tools/motion_diff.py <model3.json>` finds them (see the design doc, *Stage effects in motions*).
 - Two rules worth knowing: a portrait group defined in several files is *merged*, so the first entry of each scope has to be a
   `set` to drop what vanilla listed; and a portrait a script or the empire designer named outright (the ruler's) is not drawn from
   a group, so bind the vanilla key as well.

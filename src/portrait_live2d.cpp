@@ -778,7 +778,7 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, int kind
 
     // Events. What each does is the mod's: a motion picked from the model's own groups, an expression, a line to say.
     auto fire = [&](const EventAction& act, ActionState& state, const char* what) {
-        const bool motion = !act.motion_groups.empty() && character.PlayMotionFrom(act.motion_groups, act.motion_index);
+        const bool motion = !act.motion_groups.empty() && character.PlayMotionFrom(act.motion_groups, act.motion_index, &act.ignore_parameters);
         const bool expression = !act.expression.empty() && character.SetExpression(act.expression, act.expression_hold);
         // the line to say: the mod's entry for the motion's group (exact name first, then prefix patterns), else one of its `sounds`, else the
         // Sound that model3.json gives the motion. Several lines are taken in turn, so one is not repeated at once.

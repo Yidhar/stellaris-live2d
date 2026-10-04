@@ -57,6 +57,7 @@ void ParseAction(const pdx::Node& n, const fs::path& root, EventAction* a) {
     a->motion_groups = n.List("motion_groups");
     if (!n.Str("motion_group").empty()) a->motion_groups.push_back(n.Str("motion_group"));
     a->motion_index = (int)n.Num("motion_index", -1);
+    a->ignore_parameters = n.List("ignore_parameters");
     if (const pdx::Node* v = n.Find("voices"); v && v->block) {
         for (const pdx::Node& b : v->children) {
             if (b.key.empty()) continue;
@@ -156,6 +157,11 @@ void ReadEntry(const pdx::Node& e, const fs::path& root, const std::string& file
                 reg->messages.push_back(p.source + ": portrait " + p.key + ": live2d_actions has no action `" + c.key + "`; ignored");
             }
         }
+    }
+    // parameters every motion of this portrait leaves alone, added to each action's own list
+    if (const std::vector<std::string> all = e.List("live2d_ignore_parameters"); !all.empty()) {
+        for (EventAction* a : { &p.click, &p.hover, &p.appear, &p.idle, &p.greeting }) a->ignore_parameters.insert(a->ignore_parameters.end(), all.begin(), all.end());
+        for (auto& area : p.click_areas) area.second.ignore_parameters.insert(area.second.ignore_parameters.end(), all.begin(), all.end());
     }
     // the last definition of a key wins
     for (PortraitEntry& old : reg->entries) {

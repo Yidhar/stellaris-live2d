@@ -20,7 +20,7 @@ bool Character::Load(const core::Api* api, const std::filesystem::path& model3_j
     return true;
 }
 
-bool Character::PlayMotionFrom(const std::vector<std::string>& patterns, int index) {
+bool Character::PlayMotionFrom(const std::vector<std::string>& patterns, int index, const std::vector<std::string>* ignore) {
     std::vector<std::string> groups;
     for (const std::string& p : patterns) {
         const bool prefix = !p.empty() && p.back() == '*';
@@ -35,7 +35,7 @@ bool Character::PlayMotionFrom(const std::vector<std::string>& patterns, int ind
     // in random order until one plays: a group whose motion file is missing or broken must not make the click do nothing
     std::shuffle(groups.begin(), groups.end(), rng_);
     for (const std::string& group : groups) {
-        if (PlayMotion(group, index)) {
+        if (PlayMotion(group, index, ignore)) {
             last_group_ = group;
             return true;
         }
@@ -86,10 +86,10 @@ std::shared_ptr<Motion> Character::GetMotion(const std::string& group, int* inde
     return motion;
 }
 
-bool Character::PlayMotion(const std::string& group, int index) {
+bool Character::PlayMotion(const std::string& group, int index, const std::vector<std::string>* ignore) {
     auto motion = GetMotion(group, &index);
     if (!motion) return false;
-    player_.Start(motion, now_, group == "Idle" ? 1 : 0);
+    player_.Start(motion, now_, group == "Idle" ? 1 : 0, ignore);
     last_sound_ = model_.motions[group][index].sound;
     if (group != "Idle") action_until_ = now_ + std::max(0.1f, motion->duration);
     return true;

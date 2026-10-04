@@ -25,11 +25,12 @@ public:
 
     // Starts a motion of the group (a random one when index < 0); false when there is no such motion. Non-idle
     // motions play once and then the idle loop resumes.
-    bool PlayMotion(const std::string& group, int index = -1);
+    // `ignore`: parameter ids or patterns (with *) whose curves this motion does not apply, see MotionPlayer::Start.
+    bool PlayMotion(const std::string& group, int index = -1, const std::vector<std::string>* ignore = nullptr);
 
     // Starts a motion from a randomly chosen group among those the patterns name (an exact group name, or a prefix ending in *;
     // the Idle group only by its exact name). Avoids the group played last when there is another. False when none matches.
-    bool PlayMotionFrom(const std::vector<std::string>& patterns, int index = -1);
+    bool PlayMotionFrom(const std::vector<std::string>& patterns, int index = -1, const std::vector<std::string>* ignore = nullptr);
     const std::string& last_motion_group() const { return last_group_; }
     // Shows an expression of the model (the Name of its model3.json Expressions) for `hold` seconds (0: until another is set); false when
     // the model has no such expression.

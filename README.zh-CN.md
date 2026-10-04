@@ -55,6 +55,7 @@ Stellaris 的肖像是骨骼动画的 2D 人物，渲染到一张渲染目标纹
 
 - 语法、事件、取景、加载和肖像组的规则：[docs/portrait-mod-design.md](docs/portrait-mod-design.md)。
 - **演示 mod** 在单独的仓库 [stellaris-live2d-demo-mod](https://github.com/Yidhar/stellaris-live2d-demo-mod)：把 `human` 肖像组换成十个 Live2D 肖像（每个作用域先写 `set`，再写 `add`），原版肖像键也绑定了模型，每一种事件、语音、取景和缩放选项都用了一次。它不带模型（做它时用的模型是别人的作品），请自备模型。
+- 许多模型的 `login` 动作是舞台入场（黑幕、镜头推拉）；`live2d_ignore_parameters` 会跳过你指定的参数的曲线，`python tools/motion_diff.py <model3.json>` 能帮你找出它们（见设计文档的 *Stage effects in motions* 一节）。
 - 两条值得知道的规则：在多个文件里定义的肖像组会被*合并*，所以每个作用域的第一条必须是 `set`，才能丢掉原版列出的肖像；脚本或帝国设计器直接按名字指定的肖像（统治者的）不是从组里抽的，所以原版的键也要绑定。
 - `python scripts\make_human_mod.py --enable` 用本地模型生成测试 mod（`--export-demo <文件夹>` 写出演示仓库的文本文件）；`python scripts\load_save.py <存档> --folder <文件夹>` 在某个存档上重启游戏。
 - ini 里 `interactions=0` 关闭交互。不提供拖拽和滚轮缩放；`live2d_scale` 是对取景部分的固定放大倍率。

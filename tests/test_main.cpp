@@ -2,6 +2,7 @@
 // the framing maths. Plain asserts, no framework; run through ctest (build the l2d_tests target) or directly.
 #include "dds.hpp"
 #include "live2d_model.hpp"
+#include "live2d_motion.hpp"
 #include "pdx_script.hpp"
 #include "portrait_registry.hpp"
 
@@ -72,6 +73,20 @@ static void WriteFile(const fs::path& p, const std::string& text) {
     std::ofstream(p, std::ios::binary) << text;
 }
 
+static void TestGlob() {
+    using l2d::GlobMatch;
+    CHECK(GlobMatch("ParamBlack*", "ParamBlack"));
+    CHECK(GlobMatch("ParamBlack*", "ParamBlack2"));
+    CHECK(GlobMatch("ParamBlack*", "PARAMBLACKSHOW"));  // case does not matter
+    CHECK(!GlobMatch("ParamBlack*", "ParamBlac"));
+    CHECK(GlobMatch("*Zoom", "ParamCamZoom"));
+    CHECK(GlobMatch("Param*Zoom*", "ParamCamZoom2"));
+    CHECK(GlobMatch("ParamZoom", "paramzoom"));
+    CHECK(!GlobMatch("ParamZoom", "ParamZoom1"));
+    CHECK(GlobMatch("*", ""));
+    CHECK(!GlobMatch("", "x"));
+}
+
 static void TestRegistry() {
     const fs::path root = fs::temp_directory_path() / "l2d_test_mod";
     fs::remove_all(root);
@@ -82,6 +97,7 @@ static void TestRegistry() {
         "    live2d_model = \"gfx/live2d/m/model.model3.json\"\n"
         "    live2d_unmirror = no\n"
         "    live2d_scale = 1.5\n"
+        "    live2d_ignore_parameters = { \"ParamBlack*\" }\n"
         "    live2d_view = { auto = yes body = 0.5 }\n"
         "    live2d_view_character_large = { x = 0.4 y = 0.3 height = 0.2 }\n"
         "    live2d_view_800x400 = { auto = yes body = 0.7 scale = 2 }\n"
@@ -91,6 +107,7 @@ static void TestRegistry() {
         "      click = { motion_group = \"touch*\" voices = { touch_1 = \"s/a.wav\" touch_2 = { \"s/b.wav\" \"s/c.wav\" } } sounds = { \"s/d.wav\" } volume = 0.5 }\n"
         "      click_head = { motion_groups = { a b } expression = \"smile\" expression_hold = 2 }\n"
         "      hover = yes\n"
+        "      appear = { motion_group = \"login\" ignore_parameters = { \"ParamCam*\" ParamZoom } }\n"
         "      idle = { motion_group = \"wait*\" interval = { 10 20 } }\n"
         "      greeting = { replace_engine_sound = yes sound = \"s/e.ogg\" }\n"
         "      drag = { enabled = yes }\n"
@@ -120,6 +137,10 @@ static void TestRegistry() {
     CHECK(p.click_areas.size() == 1 && p.click_areas[0].first == "head" && p.click_areas[0].second.motion_groups.size() == 2 &&
           p.click_areas[0].second.expression == "smile" && Near(p.click_areas[0].second.expression_hold, 2.0));
     CHECK(p.hover.enabled);
+    // the entry's list goes to every action, after the action's own
+    CHECK(p.appear.ignore_parameters.size() == 3 && p.appear.ignore_parameters[0] == "ParamCam*" && p.appear.ignore_parameters[2] == "ParamBlack*");
+    CHECK(p.click.ignore_parameters.size() == 1 && p.click.ignore_parameters[0] == "ParamBlack*");
+    CHECK(p.click_areas[0].second.ignore_parameters.size() == 1 && p.greeting.ignore_parameters.size() == 1);
     CHECK(p.idle.enabled && Near(p.idle.interval_min, 10.0) && Near(p.idle.interval_max, 20.0));
     CHECK(p.greeting.enabled && p.greeting.replace_engine_sound && p.greeting.sounds.size() == 1);
     bool complained_about_drag = false, complained_about_view = false, complained_about_model = false;
@@ -226,6 +247,7 @@ static void TestViews() {
 
 int main() {
     TestScript();
+    TestGlob();
     TestRegistry();
     TestImages();
     TestViews();

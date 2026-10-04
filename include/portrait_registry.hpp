@@ -52,6 +52,8 @@ struct EventAction {
     // voice lines (absolute paths) said by any motion that has no entry in `voices`, in turn, instead of the motion's own `Sound`;
     // `sound = "file"` or `sounds = { a b }`
     std::vector<std::string> sounds;
+    // parameters whose curves the motion does not apply (ids, `*` as a wildcard): `ignore_parameters = { "ParamBlack*" "ParamCamera*" }`
+    std::vector<std::string> ignore_parameters;
     float volume = 1.0f;        // of those lines and of the motion's, relative to the master volume
     std::string expression;     // an expression of the model: its Name in the Expressions of model3.json
     float expression_hold = 3.0f;  // seconds before it fades back to the neutral face; 0 = until another one is set
@@ -64,6 +66,8 @@ inline std::string Describe(const EventAction& a) {
     std::string s = a.enabled ? "on:" : "off:";
     for (const std::string& g : a.motion_groups) s += g + ",";
     s += "|" + std::to_string(a.motion_index) + "|";
+    for (const std::string& g : a.ignore_parameters) s += g + ",";
+    s += "|";
     for (const VoiceBinding& v : a.voices) {
         s += v.pattern + "=";
         for (const std::string& l : v.lines) s += l + ",";

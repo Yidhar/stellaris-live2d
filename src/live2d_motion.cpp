@@ -108,7 +108,28 @@ void Motion::Bind(const Model& model) {
     }
 }
 
-void MotionPlayer::Start(std::shared_ptr<Motion> motion, float now, int loop) {
+bool GlobMatch(const std::string& pattern, const std::string& text) {
+    auto lower = [](char c) { return (char)std::tolower((unsigned char)c); };
+    size_t p = 0, t = 0, star = std::string::npos, mark = 0;
+    while (t < text.size()) {
+        if (p < pattern.size() && pattern[p] == '*') {
+            star = p++;
+            mark = t;
+        } else if (p < pattern.size() && lower(pattern[p]) == lower(text[t])) {
+            ++p;
+            ++t;
+        } else if (star != std::string::npos) {
+            p = star + 1;
+            t = ++mark;
+        } else {
+            return false;
+        }
+    }
+    while (p < pattern.size() && pattern[p] == '*') ++p;
+    return p == pattern.size();
+}
+
+void MotionPlayer::Start(std::shared_ptr<Motion> motion, float now, int loop, const std::vector<std::string>* ignore) {
     for (Entry& e : entries_) {
         const float end = now + e.motion->fade_out;
         if (e.end < 0.0f || end < e.end) e.end = end;
@@ -116,13 +137,22 @@ void MotionPlayer::Start(std::shared_ptr<Motion> motion, float now, int loop) {
     Entry e;
     e.motion = std::move(motion);
     e.loop = loop >= 0 ? loop != 0 : e.motion->loop;
+    if (ignore && !ignore->empty()) {
+        e.skip.assign(e.motion->curves.size(), 0);
+        for (size_t i = 0; i < e.motion->curves.size(); ++i)
+            for (const std::string& pattern : *ignore)
+                if (GlobMatch(pattern, e.motion->curves[i].id)) e.skip[i] = 1;
+    }
     entries_.push_back(std::move(e));
 }
 
 void MotionPlayer::MarkDriven(std::vector<uint8_t>* driven) const {
     for (const Entry& e : entries_)
-        for (const Motion::Curve& c : e.motion->curves)
+        for (size_t i = 0; i < e.motion->curves.size(); ++i) {
+            const Motion::Curve& c = e.motion->curves[i];
+            if (i < e.skip.size() && e.skip[i]) continue;
             if (c.target == Motion::Target::Parameter && c.index >= 0 && c.index < (int)driven->size()) (*driven)[c.index] = 1;
+        }
 }
 
 void MotionPlayer::Update(Model& model, float now) {
@@ -138,8 +168,9 @@ void MotionPlayer::Update(Model& model, float now) {
         const float fade_in = m.fade_in <= 0.0f ? 1.0f : EasingSine((now - e.fade_in_start) / m.fade_in);
         const float fade_out = (m.fade_out <= 0.0f || e.end < 0.0f) ? 1.0f : EasingSine((e.end - now) / m.fade_out);
         const float weight = fade_in * fade_out;
-        for (const Motion::Curve& c : m.curves) {
-            if (c.index < 0) continue;
+        for (size_t ci = 0; ci < m.curves.size(); ++ci) {
+            const Motion::Curve& c = m.curves[ci];
+            if (c.index < 0 || (ci < e.skip.size() && e.skip[ci])) continue;
             const float value = m.Evaluate(c, time);
             if (c.target == Motion::Target::Parameter) {
                 float w = weight;

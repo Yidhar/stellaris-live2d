@@ -52,7 +52,7 @@ portraits = {
 			click      = { motion_group = "touch*" }                           # the left button went down on the picture
 			click_head = { motion_group = "touch*"  expression = "smile" }     # ... on a hit area of the model (click_<Name>)
 			hover      = { expression = "smile"  expression_hold = 1.5 }       # the pointer came onto the picture
-			appear     = { motion_group = "wait*"  expression = "smile" }       # the portrait shows up
+			appear     = { motion_group = "login"  ignore_parameters = { "ParamBlack*" } }   # the portrait shows up
 			idle       = { motion_group = "wait*"  interval = { 15 30 } }      # now and then while it is shown
 			greeting   = { motion_group = "touch*"  replace_engine_sound = no }   # the game plays the portrait's greeting sound
 		}
@@ -98,7 +98,7 @@ name their groups differently (`touch_1`, `touch_01`, `Tap`...), so a group can 
 | `click` | the left button goes down on the portrait's picture: inside the rectangle the GUI draws it in and inside its clip area, the nearest centre where portraits overlap. Only mouse messages that land there are looked at; every message still reaches the game, so a button drawn over the portrait is pressed as well, and a window drawn over it does not stop the click from counting |
 | `click_<Name>` | the same, when the click is on the hit area `<Name>` of the model (`click_head`, `click_body`, `click_leg` for the test models; the comparison ignores case). Falls back to `click` when the model has no such area or the area has no action |
 | `hover` | the pointer comes onto the picture |
-| `appear` | the portrait shows up: the first time, or again after not being drawn for a while (a screen opened). Pick a motion that keeps the background transparent: the `login` motion of many models is a stage entrance that fades in from a black backdrop (the test models' does, for about six seconds), which looks like a dark box in the middle of a screen |
+| `appear` | the portrait shows up: the first time, or again after not being drawn for a while (a screen opened). `login` is the natural motion for it, but see *Stage effects in motions* below |
 | `idle` | every `interval = { min max }` seconds (random in between) while the portrait is shown, not over a motion an event started |
 | `greeting` | the game plays the portrait's own greeting sound (`greeting_sound` of its `portraits` entry: the diplomacy window opening, an incoming proposal, a species being previewed). The plugin hooks the engine function that fetches that sound; with `replace_engine_sound = yes` the game's sound is not played, so the action's line takes its place |
 
@@ -156,6 +156,32 @@ draws it`: a key without the mod's prefix in that line is one the mod's group di
 player chose by name in the empire designer, has that *key* as its selector (the log says `leader #167772188 of human_female_05`, the group
 position holding the key itself), so no `portrait_groups` entry reaches it. To cover those too, give the vanilla keys a model in the plugin's
 file as well (`scripts/make_human_mod.py` binds `human_female_01..05` and `human_male_01..05` to the models of their `l2d_` counterparts).
+
+## Stage effects in motions
+
+Many models were made for a game's login screen, and their `login` motion is a stage entrance, not just a pose: a black curtain that fades
+in or out, a virtual camera that zooms and pans, a spotlight, photo frames. Inside a portrait that shows up as a dark box in the middle of the
+screen, or as the figure flying in from a close-up. The model's own parameters do it, under names that differ from model to model
+(`ParamBlack`, `ParamCamZoom`, `ParamHeiMuOpen`, `Paramxiangkuangkaiguan`, ...), and some models key them in the touch motions too.
+
+A mod handles this per portrait: `ignore_parameters = { ... }` in an action, or `live2d_ignore_parameters = { ... }` in the portrait entry
+(for every action of it), lists parameter ids, with `*` standing for any run of characters (case does not matter). The curves of a motion
+for those parameters are then not applied: the character's own animation plays, the curtain and the camera do not.
+
+```
+l2d_human_male_02 = {
+	live2d = yes
+	live2d_model = "gfx/live2d/model_03/model.model3.json"
+	live2d_ignore_parameters = { "ParamBlack*" "ParamCam*" "ParamZoom" "ParamQianjin*" }
+	live2d_actions = { appear = { motion_group = "login" } }
+}
+```
+
+`python tools/motion_diff.py <model3.json> [group]` finds them: it lists the parameters a motion group moves (or holds at a value) that none of
+the model's other groups do, marks the ones whose name looks like a stage effect, and prints the `live2d_ignore_parameters` line. Parameters
+the other groups move too (the curtain of one test model is also keyed by its touch motions) are not found that way; `l2d_view --motion login
+--time 1 --ignore "ParamBlack*" --out a.png` shows what a list does, without starting the game. A model whose login is a whole scene (the
+character switched on and off by parameters, backgrounds sliding in) has nothing to ignore: use another motion for `appear`.
 
 ## Making a mod
 
