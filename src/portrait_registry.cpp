@@ -210,13 +210,13 @@ void ScanMod(const fs::path& root, const std::string& name, bool parse, Registry
 
 } // namespace
 
-Registry ScanRegistry(const std::vector<std::string>& extra_mod_dirs, bool parse) {
+Registry ScanRegistry(const std::vector<std::string>& extra_mod_dirs, bool parse, bool use_playset) {
     Registry reg;
     reg.signature = 14695981039346656037ull;
     const fs::path docs = DocumentsDir();
     const fs::path playset = docs / "dlc_load.json";
     std::error_code ec;
-    if (fs::exists(playset, ec)) {
+    if (use_playset && fs::exists(playset, ec)) {
         reg.signature = Sign(reg.signature, playset);
         std::string text;
         if (ReadText(playset, &text)) {

@@ -110,6 +110,7 @@ struct Registry {
 // Scans the enabled mods (Documents\Paradox Interactive\Stellaris\dlc_load.json) and `extra_mod_dirs` (mod root folders to
 // read as if enabled, for development).
 // With parse = false only the signature is worked out (file sizes and times), cheap enough to do every few seconds.
-Registry ScanRegistry(const std::vector<std::string>& extra_mod_dirs, bool parse = true);
+// With use_playset = false the user's playset is not read (tests).
+Registry ScanRegistry(const std::vector<std::string>& extra_mod_dirs, bool parse = true, bool use_playset = true);
 
 } // namespace l2d

@@ -81,3 +81,9 @@ add_library(l2d_loader SHARED loader/proxy.cpp loader/proxy_exports.asm loader/p
 target_include_directories(l2d_loader PRIVATE loader)
 set_target_properties(l2d_loader PROPERTIES OUTPUT_NAME "d3dx9_43" PREFIX "" RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/loader>")
 target_compile_definitions(l2d_loader PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
+
+# l2d_tests.exe: checks of what needs neither the game nor the Cubism Core (script reader, registry, DDS, mips, framing); `ctest -C Release`
+add_executable(l2d_tests tests/test_main.cpp src/pdx_script.cpp src/portrait_registry.cpp)
+target_link_libraries(l2d_tests PRIVATE l2d_core shell32 ole32)
+enable_testing()
+add_test(NAME l2d_tests COMMAND l2d_tests)
