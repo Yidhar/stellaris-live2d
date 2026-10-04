@@ -4,7 +4,7 @@
 
 **Stellaris 4.5.1**（Windows x64，`-dx11` 版本）的 Live2D 肖像：一个注入到 `stellaris.exe` 的 DLL，把 Live2D 模型画进游戏自己的肖像框里。布局、遮罩和着色器仍由游戏负责，而且游戏只会绘制屏幕上看得到的肖像。
 
-**状态：里程碑 2。** 在真实的游戏里，一个 `moc3` 模型已经能加载、播放动画（待机循环、动作、物理），并画进议会和领袖界面的肖像。还没有做的：按肖像选择模型（目前是一个模型画进所选尺寸的所有肖像）、按界面裁剪、状态变体和控制接口。见[计划](#计划)。
+**状态。** Live2D `moc3` 模型已经画进游戏的肖像（领袖、人口、物种、议政厅、星球界面），有动画（动作、物理、表情、眨眼、呼吸、口型），也能交互（鼠标跟随、点击画面或模型的点击区域、悬停、出现、待机、问候音效），语音跟随游戏音量。这一切由 mod 用肖像脚本语法声明；用 `scripts\deploy.py` 装上加载器之后，游戏会自己加载插件。还没有做：Spine、`pose3.json`、UI 缩放不等于 1 的测试、用 Live2D 官方 Core 的测试（只用过 Purism Core）、多人游戏。只针对 Stellaris 4.5.1 编译和测试。见[计划](#计划)。
 
 ## 原理
 
@@ -27,7 +27,7 @@ Stellaris 的肖像是骨骼动画的 2D 人物，渲染到一张渲染目标纹
 
 1. **Cubism Core。** 可以是 Live2D 官方的 `Live2DCubismCore.dll`（来自 live2d.com 的 Cubism SDK for Native，遵守 Live2D 的条款），也可以是兼容的替代品，例如 [Purism Core](https://github.com/SakuraMotion/PurismCore)（MIT）。插件使用 v5 版的 API（`csmGetDrawableRenderOrders` 和颜色相关的函数）；只有新版 API 的库暂不支持。
 2. **模型**：一个文件夹，里面有 `model3.json`、`moc3`、贴图（PNG、JPEG，或 DXT1/DXT3/DXT5 的 DDS，即游戏自己贴图的格式：显存占用是 RGBA8 的四分之一，mip 链存在文件里），可选的 `physics3.json` 和动作。`l2d_pack` 可以把模型的 PNG 贴图转成 DXT5。模型有它们作者的许可证。
-3. 编译插件（见下），启动游戏，运行 `python scripts\l2dctl.py load`（还有 `unload`、`reload`、`status`）。注入只在这一次游戏运行中有效。
+3. 编译插件（见下），运行 `python scripts\deploy.py`：它把 `stellaris_live2d.dll` 和加载器 `d3dx9_43.dll` 复制到 `stellaris.exe` 旁边，之后游戏启动几秒后会自己加载插件（`deploy.py --remove` 把两者都删掉；`stellaris.exe` 旁边放一个 `stellaris_live2d.disabled` 文件，这一次运行就不加载）。加载器是替身，替的是只有游戏的 exe 才会导入的一个系统 DLL：exe 所在的文件夹先被搜索，所以游戏会用它；它把每个调用转给真正的 `d3dx9_43.dll`，并加载插件（在别的程序里它什么也不做）。没有它时，`python scripts\l2dctl.py load` 把插件注入到正在运行的游戏里，只在这一次运行有效（还有 `unload`、`reload`、`status`）。
 4. 编辑 `stellaris.exe` 旁边的 `stellaris_live2d.ini`（首次运行时创建，每 2 秒重新读取），打开有肖像的界面（议会、领袖列表）；没有显示的话看 `stellaris_live2d.log`。
 
 | 键 | 默认值 | 含义 |
@@ -38,13 +38,26 @@ Stellaris 的肖像是骨骼动画的 2D 人物，渲染到一张渲染目标纹
 | `models` | | 多个模型，用 `;` 分隔：`path`、`path\|x,y,h`（指定裁剪）或 `path\|auto` / `path\|auto:0.5`（按模型自动算裁剪：从头顶往下取人物身高的这个比例，默认 `0.46`）。每个肖像第一次出现时按顺序分到一个模型 |
 | `only_width`、`only_height` | `0` | 只处理渲染目标恰好是这个大小的肖像（`0` = 所有大小）；游戏的角色肖像是 575×380 |
 | `view_x`、`view_y`、`view_h` | `0.44`、`0.19`、`0.26` | 显示模型画布的哪一部分：中心距左边、中心距上边、高度，都是画布的比例 |
+| `model_cache_mb` | `512` | 已加载的模型可以占用的内存：在此之内所有模型都在后台提前加载，超出则按需加载，并丢掉最久没用的 |
+| `supersample` | `2` | `2` 以两倍大小绘制再平均缩小（细线更清晰，开销很小）；`1` 为关闭 |
 | `fps` | `30` | 模型每秒推进和重绘多少次 |
 | `physics` | `1` | 来自模型 `physics3.json` 的次级运动 |
+| `interactions` | `1` | mod 声明的事件（鼠标跟随、点击、悬停……）；`0` = 模型只播自己的动作 |
+| `audio`、`volume` | `1`、`0.8` | 事件的语音开关，以及插件自己的音量（再乘以游戏的音量） |
+| `volume_channel` | `voice` | 语音跟随游戏声音设置里的哪个滑块：`voice`、`effects` 或 `none` |
+| `mute_in_background` | `0` | `1` = 游戏窗口不在前台时静音 |
+| `extra_mod_dirs` | | 当作已启用来读取的 mod 根目录（开发用） |
 | `test_pattern` | `0` | 改为画测试图案（用来检查钩子是否工作） |
 
 ### 肖像组 mod
 
-推荐的用法是做一个 mod：mod 带着模型，并声明它们替换哪些肖像。mod 用游戏自己注册肖像的脚本语法写出要交给插件绘制的肖像键，再加几个额外的键（`live2d = yes`、`spine = yes`、`live2d_model`、`live2d_view`，以及描述鼠标跟随、点击、拖拽、缩放的 `live2d_actions`）。插件从已启用 mod 的 `gfx/portraits/live2d/*.txt`（引擎不读的目录）或 `gfx/portraits/portraits/*.txt` 读取，把每个模型绑定到引擎报告的肖像键上。没有插件的游戏照常画原来的肖像。详见 [docs/portrait-mod-design.md](docs/portrait-mod-design.md)。`python scripts\make_human_mod.py --enable` 会用 `models_dxt5\` 里的模型生成一个替换人类肖像的测试 mod；`python scripts\load_save.py <存档> --folder <目录>` 让游戏读入存档并注入插件。`mouse_follow`（头和眼睛跟着鼠标，以肖像自己在屏幕上的位置为准）、`click`（触摸动作和语音，ini 里 `audio`、`volume` 控制）和 `live2d_unmirror`（被界面镜像的肖像先反着画，文字读起来正常）已可用；ini 里 `interactions=0` 可关闭交互。`drag` 目前只解析，尚未实现。mod 条目里的 `live2d_scale` 可以固定放大取景部分。
+推荐的用法是做一个 mod：mod 带着模型，并声明它们替换哪些肖像。mod 用游戏自己注册肖像的脚本语法写出要交给插件绘制的肖像键，再加几个额外的键（`live2d = yes`、`spine = yes`、`live2d_model`、`live2d_view`、`live2d_scale`、`live2d_unmirror`，以及 `live2d_actions`，用来声明鼠标跟随、点击、悬停、出现、待机和游戏问候音效时发生什么）。插件从已启用 mod 的 `gfx/portraits/live2d/*.txt`（引擎会忽略的文件夹）或 `gfx/portraits/portraits/*.txt` 读取它们，并把每个模型绑定到引擎为某个肖像报告的肖像键上。没有安装插件的游戏照常画普通肖像。领袖、统治者、物种和人口用哪些肖像，由游戏自己的 `portrait_groups` 语法决定：mod 把自己的键列进某个组，就能让每个领袖或人口用不同的模型，不需要额外语法。动作组、表情和点击区域来自模型自己的 `model3.json`，mod 只说在哪个事件播哪个。
+
+- 语法、事件、取景、加载和肖像组的规则：[docs/portrait-mod-design.md](docs/portrait-mod-design.md)。
+- **演示 mod** 在单独的仓库 [stellaris-live2d-demo-mod](https://github.com/Yidhar/stellaris-live2d-demo-mod)：把 `human` 肖像组换成十个 Live2D 肖像（每个作用域先写 `set`，再写 `add`），原版肖像键也绑定了模型，每一种事件、语音、取景和缩放选项都用了一次。它不带模型（做它时用的模型是别人的作品），请自备模型。
+- 两条值得知道的规则：在多个文件里定义的肖像组会被*合并*，所以每个作用域的第一条必须是 `set`，才能丢掉原版列出的肖像；脚本或帝国设计器直接按名字指定的肖像（统治者的）不是从组里抽的，所以原版的键也要绑定。
+- `python scripts\make_human_mod.py --enable` 用本地模型生成测试 mod（`--export-demo <文件夹>` 写出演示仓库的文本文件）；`python scripts\load_save.py <存档> --folder <文件夹>` 在某个存档上重启游戏。
+- ini 里 `interactions=0` 关闭交互。不提供拖拽和滚轮缩放；`live2d_scale` 是对取景部分的固定放大倍率。
 
 ### 离屏查看器
 
@@ -77,16 +90,18 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release        # build\Release\stellaris_live2d.dll 和 l2d_view.exe
 ```
 
-DLL 只适用于它的 SDK 所定位的那个 `stellaris.exe`（加载时检查；版本不一致时只写日志，不安装任何钩子）。游戏更新之后：`pip install pefile capstone`，运行 `python tools/locate.py`，重新编译。
+DLL 只适用于它的 SDK 所定位的那个 `stellaris.exe`（加载时检查；版本不一致时只写日志，不安装任何钩子）。游戏更新之后：`pip install pefile capstone`，运行 `python tools/locate.py`，重新编译，然后检查：
+
+- `python tools/validate.py`：定位器找到的仍是头文件里写的，每个手工或在游戏里验证过的值没有变，布局的不变量成立；没有指纹可找的常量（GUI 对象的布局）如果是为另一个版本验证的，它会说出来。这相当于主仓库 SDK dumper 的 `validate.py`。
+- 游戏运行、屏幕上有肖像时运行 `python tools/live_verify.py`：插件自己检查活的对象（肖像键和种类、矩形、窗口和 GUI 大小、游戏音量，以及游戏窗口在前台时的鼠标位置），把结果写进日志，这个脚本把它打印出来。
+- `build\Release\l2d_tests.exe`（或在 `build` 里运行 `ctest -C Release`）：脚本读取器、肖像注册表、DDS 读取、mip 链和取景计算的离线检查。
 
 ## 计划
 
-1. **已完成：** 钩子、纹理写入、恢复、卸载。
-2. **已完成：** Core 加载、模型、动作、物理、渲染器、画进游戏。
-3. **已完成：** 同时多个模型、DXT5 贴图、按肖像键绑定模型的肖像组 mod。
-4. **已完成：** 鼠标跟随。接下来：点击、拖拽、缩放、Spine、按领袖或按界面绑定。
-5. 状态变体（例如受伤）。
-6. 由 CI 发布构建。
+1. **已完成：** 钩子、纹理写入、恢复、卸载；Core 加载、模型、动作、物理、渲染器；同时多个模型、DXT5 贴图、肖像组 mod。
+2. **已完成：** 鼠标跟随、点击、点击区域、悬停、出现、待机、问候；表情、眨眼、呼吸、口型；跟随游戏音量的语音；按肖像种类和大小的取景；超采样；在内存预算内后台加载。
+3. **已完成：** 让游戏自己加载插件的加载器；SDK 检查（`tools/validate.py`、插件自检）和离线测试。
+4. mod 检查器（启动游戏之前就发现肖像文件的问题）、Spine、`pose3.json`、由 CI 发布构建。
 
 ## 授权
 
@@ -94,7 +109,7 @@ DLL 只适用于它的 SDK 所定位的那个 `stellaris.exe`（加载时检查�
 
 - **Cubism Core** 是 Live2D 的专有库，这里不分发（见上面的第 1 步）。请查看你所用的那个的条款；Live2D 的协议对允许第三方添加内容的应用有特别规定。
 - **模型**是作者的作品，各自有自己的许可证。
-- `third_party/` 里有 `stb_image`（公有领域）和 `nlohmann/json`（MIT），见 `third_party/README.md`。
+- `third_party/` 里是单头文件库（miniaudio、stb 系列、`nlohmann/json`），见 `third_party/README.md`；MinHook（BSD-2-Clause）由 CMake 获取。
 
 ## 许可证
 

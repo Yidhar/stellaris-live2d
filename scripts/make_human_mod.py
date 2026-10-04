@@ -10,9 +10,11 @@ What it makes, the way a real portrait mod would:
     which model, framing, events, voice lines and expression;
   * gfx/live2d/ holds the models (DXT5 textures, see l2d_pack), sound/ the voice lines.
 
-    python make_human_mod.py [--out <mod folder>] [--models <folder with packed models>] [--enable]
+    python make_human_mod.py [--out <mod folder>] [--models <folder with packed models>] [--enable] [--export-demo <folder>]
 
 --enable also adds the mod to the playset (dlc_load.json, the original is kept as dlc_load.json.live2d_backup).
+--export-demo copies only the text of the mod (descriptor.mod and the two portrait files, no models, no sound) into a folder: the demo mod
+repository is kept that way, since the test models are third-party art.
 """
 import argparse
 import json
@@ -121,6 +123,7 @@ def main():
     ap.add_argument("--out", default=os.path.join(DOCS, "mod", MOD_NAME))
     ap.add_argument("--models", default=os.path.join(ROOT, "models_dxt5"))
     ap.add_argument("--enable", action="store_true")
+    ap.add_argument("--export-demo", metavar="FOLDER", help="also copy the mod's text files (no art) into FOLDER")
     ap.add_argument("--voices", default=os.path.join(ROOT, "scratch", "voice"),
                     help="folder of WAV/MP3/FLAC/OGG lines every portrait says when clicked (see make_test_voices.ps1); none if missing")
     a = ap.parse_args()
@@ -182,6 +185,23 @@ def main():
     size = sum(os.path.getsize(os.path.join(d, n)) for d, _, ns in os.walk(a.out) for n in ns)
     print(f"mod written to {a.out} ({size / 1048576:.1f} MB), descriptor {outer}; {len(ASSIGN)} portraits, "
           f"{len(set(ASSIGN.values()))} models")
+
+    if a.export_demo:
+        # the demo does not name the test models (their folder names are ids of the third-party art): model_01, model_02, ...
+        names = {m: f"model_{i:02d}" for i, m in enumerate(sorted(set(ASSIGN.values())), 1)}
+        for rel in ("descriptor.mod", "gfx/portraits/portraits/zz_live2d_humans.txt", "gfx/portraits/live2d/00_live2d_humans.txt"):
+            dst = os.path.join(a.export_demo, *rel.split("/"))
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            with open(os.path.join(a.out, *rel.split("/")), encoding="utf-8") as f:
+                text = f.read()
+            with open(dst, "w", encoding="utf-8", newline="\n") as f:
+                text = text.replace("Live2D Human Portraits (test)", "Live2D Human Portraits (demo)").replace("sound/live2d_test/", "sound/demo/")
+                for model, name in names.items():
+                    text = text.replace(f"gfx/live2d/{model}/", f"gfx/live2d/{name}/")
+                f.write(text)
+        print(f"text files exported to {a.export_demo}")
+        for key, model in ASSIGN.items():
+            print(f"  {new_key(key)} (and {key}) -> gfx/live2d/{names[model]}/")
 
     if a.enable:
         playset = os.path.join(DOCS, "dlc_load.json")

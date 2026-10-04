@@ -6,10 +6,12 @@ Live2D portraits for **Stellaris 4.5.1** (Windows x64, the `-dx11` build): a DLL
 draws a Live2D model into the game's own portrait frames. The game keeps doing the layout, the masks and the shaders, and
 only draws portraits that are on screen.
 
-**Status: milestone 2.** A `moc3` model is loaded, animated (idle loop, motions, physics) and drawn into the portraits of
-the council and leader screens, in the real game. What is still missing: choosing a model per portrait (for now one model
-is drawn into every portrait of the chosen size), crops per screen, state variants, and a control interface. See the
-[plan](#plan).
+**Status.** Live2D `moc3` models are drawn into the portraits of the game (leaders, pops, species, the council, the planet
+view), animated (motions, physics, expressions, blinking, breathing, lip sync) and interactive (mouse follow, click on the
+picture or on a hit area of the model, hover, appear, idle, greeting sound), with voice lines that follow the game's volume.
+A mod declares all of it in the portrait script syntax, and once `scripts\deploy.py` has installed the loader the game loads
+the plugin by itself. Not done: Spine, `pose3.json`, a test with a UI scale other than 1, a test with Live2D's official Core
+(only Purism Core was used), multiplayer. Built for and tested on Stellaris 4.5.1 only. See the [plan](#plan).
 
 ## How it works
 
@@ -88,15 +90,25 @@ You need a Cubism Core library and a model. Neither is included.
 
 The intended way to use the plugin is a mod that carries the models and says which portraits they replace: the mod registers
 the portrait keys it wants drawn by the plugin, in the script syntax the game uses for portraits, with a few extra keys
-(`live2d = yes`, `spine = yes`, `live2d_model`, `live2d_view`, `live2d_actions` for mouse follow, click, drag and zoom). The
-plugin reads them from the enabled mods' `gfx/portraits/live2d/*.txt` (a folder the engine ignores) or from their
-`gfx/portraits/portraits/*.txt`, and binds each model to the portrait key the engine reports for a portrait. A game without the
-plugin keeps drawing the normal portraits. See [docs/portrait-mod-design.md](docs/portrait-mod-design.md).
-`python scripts\make_human_mod.py --enable` builds a test mod that replaces the human portraits with the models in
-`models_dxt5\`; `python scripts\load_save.py <save> --folder <folder>` restarts the game on a save and injects the plugin.
-`mouse_follow` (head and eyes follow the pointer, seen from the portrait's own place on the screen), `click` (a touch motion and its voice line, bound per motion group, `audio` and `volume` in the ini)
-and `live2d_unmirror` (portraits the GUI mirrors are drawn flipped, so text reads correctly) work; `interactions=0` in the ini
-turns the interactions off. `drag` is parsed but not implemented yet. `live2d_scale` in a mod entry sets a fixed magnification of the framed part.
+(`live2d = yes`, `spine = yes`, `live2d_model`, `live2d_view`, `live2d_scale`, `live2d_unmirror`, and `live2d_actions` for
+what happens on mouse follow, click, hover, appear, idle and the game's greeting sound). The plugin reads them from the enabled
+mods' `gfx/portraits/live2d/*.txt` (a folder the engine ignores) or from their `gfx/portraits/portraits/*.txt`, and binds each
+model to the portrait key the engine reports for a portrait. A game without the plugin keeps drawing the normal portraits.
+Which portraits leaders, rulers, species and pops get is the game's own `portrait_groups` syntax: a mod lists its keys in a group
+and gets a different model per leader or pop, with no extra syntax. The motion groups, expressions and hit areas come from the
+model's own `model3.json`; the mod only says which to play on which event.
+
+- Syntax, events, views, loading and the group rules: [docs/portrait-mod-design.md](docs/portrait-mod-design.md).
+- **A demo mod** lives in its own repository, [stellaris-live2d-demo-mod](https://github.com/Yidhar/stellaris-live2d-demo-mod): the `human` portrait group
+  replaced with ten Live2D portraits (a `set` for each scope, then `add`s), the vanilla keys bound too, and every event, voice line,
+  view and scale option used once. It ships no models, since the ones it was made with are other people's art: bring your own.
+- Two rules worth knowing: a portrait group defined in several files is *merged*, so the first entry of each scope has to be a
+  `set` to drop what vanilla listed; and a portrait a script or the empire designer named outright (the ruler's) is not drawn from
+  a group, so bind the vanilla key as well.
+- `python scripts\make_human_mod.py --enable` builds the test mod from local models (`--export-demo <folder>` writes the demo
+  repository's text files); `python scripts\load_save.py <save> --folder <folder>` restarts the game on a save.
+- `interactions=0` in the ini turns the interactions off. Dragging and wheel zoom are not offered; `live2d_scale` is a fixed
+  magnification of the framed part.
 
 ### The offscreen viewer
 
@@ -148,12 +160,13 @@ mismatch and installs nothing). After a game patch: `pip install pefile capstone
 
 ## Plan
 
-1. **Done:** hook, texture write, restore, unload.
-2. **Done:** Core loading, model, motions, physics, renderer, drawing into the game.
-3. **Done:** several models at once; DXT5 textures; portrait-group mods that bind models to portrait keys.
-4. **Done:** mouse follow. Next: click, drag, zoom, Spine, binding per leader or per screen.
-5. State variants (for example wounded).
-6. Release builds by CI.
+1. **Done:** hook, texture write, restore, unload; Core loading, model, motions, physics, renderer; several models at once, DXT5
+   textures, portrait-group mods.
+2. **Done:** mouse follow, click, click on hit areas, hover, appear, idle, greeting; expressions, blinking, breathing and lip sync;
+   voice lines that follow the game's volume; views per portrait kind and size; supersampling; background loading within a memory budget.
+3. **Done:** the loader that makes the game load the plugin by itself; SDK checks (`tools/validate.py`, the plugin's self-test) and
+   offline tests.
+4. A checker for mods (what is wrong with a portrait file before the game is started), Spine, `pose3.json`, release builds by CI.
 
 ## Licensing
 
@@ -162,7 +175,8 @@ The code here is MIT. It does not include or download any Live2D code or any mod
 - **Cubism Core** is Live2D's proprietary library and is not redistributed here (see step 1 above). Check the terms of
   whichever you use; Live2D's license has special rules for applications that let third parties add content.
 - **Models** are the work of their authors and carry their own licenses.
-- `third_party/` holds `stb_image` (public domain) and `nlohmann/json` (MIT), see `third_party/README.md`.
+- `third_party/` holds single-header libraries (miniaudio, the stb libraries, `nlohmann/json`), see `third_party/README.md`;
+  MinHook (BSD-2-Clause) is fetched by CMake.
 
 ## License
 
