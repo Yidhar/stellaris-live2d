@@ -13,16 +13,17 @@
 //     live2d_scale = 1.0                magnifies the framed part around its centre: 1.25 shows a quarter less of the model
 //     live2d_actions = {
 //         mouse_follow = { enabled = yes  strength = 0.6 }
-//         click        = { enabled = yes  motion_group = "touch*"  motion_index = -1 }   // or motion_groups = { a b c }
-//                         add  voices = { touch_1 = "sound/a.wav"  touch_2 = { "sound/b.ogg" "sound/c.ogg" } }  for lines per motion group,
-//                              sounds = { "sound/d.wav" }  for lines of any other motion, volume = 1.0 to scale them; a motion with
-//                              neither says the Sound given for it in model3.json
-//         drag         = { enabled = yes  strength = 1.0 }
+//         click  = { motion_group = "touch*" ... }     what happens on each event, see EventAction; events: click (anywhere on the picture),
+//         click_Head = { ... }                          click_<Area> (a hit area of the model, the Name in its model3.json HitAreas),
+//         hover  = { ... }                              the pointer comes onto the picture, appear (the portrait shows up), idle (now and
+//         appear = { ... }   idle = { interval = { 20 40 } ... }   then, every `interval` seconds while it is shown)
 //     }
+// The motion groups and expressions are the model's own, named in its model3.json; the mod only picks which one an event plays.
 //
 // `live2d = yes` entries are found in the portraits blocks of the mod's files and in blocks named `live2d_portraits`.
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace l2d {
@@ -35,7 +36,8 @@ struct VoiceBinding {
     std::vector<std::string> lines;  // absolute paths
 };
 
-struct ClickAction {
+// What one event does: a motion, an expression and a line to say, any of them.
+struct EventAction {
     bool enabled = false;
     // motion groups to pick from at random: `motion_group = "name"` or `motion_groups = { a b }`; a name ending in * matches every
     // group that starts with the rest ("touch*": touch_1, touch_2, ...). The Idle group is never chosen by a pattern.
@@ -47,9 +49,27 @@ struct ClickAction {
     // `sound = "file"` or `sounds = { a b }`
     std::vector<std::string> sounds;
     float volume = 1.0f;        // of those lines and of the motion's, relative to the master volume
-    std::string expression;     // read, not implemented yet
+    std::string expression;     // an expression of the model: its Name in the Expressions of model3.json
+    float expression_hold = 3.0f;  // seconds before it fades back to the neutral face; 0 = until another one is set
+    float interval_min = 20.0f, interval_max = 40.0f;  // idle only: seconds between two
 };
-struct DragAction { bool enabled = false; float strength = 1.0f; };
+
+// The settings as text, to tell whether a reload changed anything.
+inline std::string Describe(const EventAction& a) {
+    std::string s = a.enabled ? "on:" : "off:";
+    for (const std::string& g : a.motion_groups) s += g + ",";
+    s += "|" + std::to_string(a.motion_index) + "|";
+    for (const VoiceBinding& v : a.voices) {
+        s += v.pattern + "=";
+        for (const std::string& l : v.lines) s += l + ",";
+        s += ";";
+    }
+    s += "|";
+    for (const std::string& l : a.sounds) s += l + ",";
+    s += "|" + std::to_string(a.volume) + "|" + a.expression + "|" + std::to_string(a.expression_hold) + "|" +
+         std::to_string(a.interval_min) + "|" + std::to_string(a.interval_max);
+    return s;
+}
 
 struct PortraitEntry {
     std::string key;            // the portrait key (`human_female_01`), what the engine reports for a portrait object
@@ -61,8 +81,8 @@ struct PortraitEntry {
     float view_x = 0.44f, view_y = 0.19f, view_h = 0.26f;
     float scale = 1.0f;         // live2d_scale: >1 shows a smaller part of the model, bigger
     MouseFollow mouse_follow;
-    ClickAction click;
-    DragAction drag;
+    EventAction click, hover, appear, idle;
+    std::vector<std::pair<std::string, EventAction>> click_areas;  // by hit area name
     std::string source;         // file and line, for the log
 };
 

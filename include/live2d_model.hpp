@@ -55,6 +55,12 @@ public:
 
     std::vector<Image> textures;
     std::map<std::string, std::vector<MotionRef>> motions;  // by group
+    std::map<std::string, std::filesystem::path> expressions;  // the Expressions of model3.json: Name -> exp3.json
+    struct HitArea {
+        std::string name;  // the Name in model3.json (head, body, leg...)
+        int drawable = -1;
+    };
+    std::vector<HitArea> hit_areas;
     std::filesystem::path physics_file;                       // empty when the model has none
     std::filesystem::path directory;
 
@@ -74,6 +80,8 @@ public:
 
     int drawable_count = 0;
 
+    // The name of the first hit area whose drawable's mesh holds the point (model units, y up), or empty. After Update().
+    std::string HitTest(float x, float y) const;
     int FindParameter(const std::string& id) const;
     int FindPart(const std::string& id) const;
 

@@ -8,7 +8,9 @@
 #include <windows.h>
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <map>
+#include <random>
 #include <mutex>
 #include <set>
 #include <unordered_map>
@@ -31,6 +33,20 @@ double TickFrequency() {
     return f;
 }
 
+// A point of a portrait's rectangle (u from the left, v from the top, 0..1) as a point of the model, in the model's own units with y up,
+// for the view the portrait is drawn with: the inverse of what the renderer does.
+void RectPointToModel(const View& view, const Model& m, UINT width, UINT height, float u, float v, float* x, float* y) {
+    const float cw = m.canvas_size.x, ch = m.canvas_size.y;
+    const float vh = view.height, vw = vh * (ch / cw) * ((float)width / (float)height);
+    const float fx = view.center_x + (u - 0.5f) * vw, fy = view.center_y + (v - 0.5f) * vh;  // canvas fractions from the left and the top
+    *x = (fx * cw - m.canvas_origin.x) / m.pixels_per_unit;
+    *y = ((1.0f - fy) * ch - m.canvas_origin.y) / m.pixels_per_unit;
+}
+
+bool SameName(const std::string& a, const std::string& b) {
+    return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) { return std::tolower((unsigned char)x) == std::tolower((unsigned char)y); });
+}
+
 struct Frame {
     ComPtr<ID3D11Texture2D> texture;
     ComPtr<ID3D11RenderTargetView> rtv;
@@ -48,15 +64,22 @@ struct Slot {
 
 // How a portrait key shows a model: the framing, and what it does when the mouse is near or it is clicked. Cheap: the model, its
 // textures and its animation are the slot's; this holds only settings, and the frames drawn for it.
+struct ActionState {
+    std::vector<uint32_t> voice_next;  // render thread: per `voices` entry of the action, which of its lines comes next
+    uint32_t sound_next = 0;           // the same for its `sounds`
+};
+enum { kStateClick = 0, kStateHover = 1, kStateAppear = 2, kStateIdle = 3, kStateAreas = 4 };
+
 struct Presentation {
     int slot = -1;  // index into the slots
     View view;
     MouseFollow follow;
-    ClickAction click;
+    EventAction click, hover, appear, idle;
+    std::vector<std::pair<std::string, EventAction>> click_areas;
+    std::vector<ActionState> states;    // kStateClick.., then one per click area
     bool unmirror = true;
     std::string identity;               // the settings as text, to see what a reload changed
-    std::vector<uint32_t> voice_next;   // render thread: per `click.voices` entry, which of its lines comes next
-    uint32_t sound_next = 0;            // the same for `click.sounds`
+    uint64_t next_idle = 0;             // render thread: when the idle action fires next (Ticks; 0 = not scheduled yet)
 };
 
 } // namespace
@@ -99,6 +122,12 @@ struct Live2DPainter::Impl {
     uint64_t last_call = 0, serial = 0;
     double pending = 0.0;  // seconds since the last step that have not been stepped yet
     bool reported_failure = false;
+    struct Painted {
+        uint64_t tick = 0;
+        std::string key;
+    };
+    std::unordered_map<const void*, Painted> last_painted;  // when each portrait object was last painted, for the appear event
+    std::mt19937 rng{ std::random_device{}() };
 
     // --- statistics
     std::atomic<uint64_t> ticks{ 0 }, draws{ 0 }, copies{ 0 }, failures{ 0 }, assigned{ 0 }, slot_count{ 0 }, skipped{ 0 };
@@ -144,7 +173,8 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         float body = 0.46f, x = 0, y = 0, h = 0, scale = 1.0f;
         bool unmirror = true;
         MouseFollow follow;
-        ClickAction click;
+        EventAction click, hover, appear, idle;
+        std::vector<std::pair<std::string, EventAction>> click_areas;
         std::string identity;
     };
     std::vector<std::string> paths;
@@ -169,19 +199,16 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         w.unmirror = e.unmirror;
         w.follow = e.mouse_follow;
         w.click = e.click;
-        std::string groups;
-        for (const std::string& g : e.click.motion_groups) groups += g + ",";
-        groups += "|";
-        for (const std::string& g : e.click.sounds) groups += g + ",";
-        for (const VoiceBinding& v : e.click.voices) {
-            groups += "|" + v.pattern + "=";
-            for (const std::string& l : v.lines) groups += l + ",";
-        }
+        w.hover = e.hover;
+        w.appear = e.appear;
+        w.idle = e.idle;
+        w.click_areas = e.click_areas;
         char id[256];
-        snprintf(id, sizeof id, "%d|%d %.3f %.3f %.3f %.3f z%.3f|m%d f%.2f c%d:%d u%d d%d v%.3f|", w.model, (int)w.auto_view, w.body, w.x, w.y, w.h,
-                 w.scale, (int)e.mouse_follow.enabled, e.mouse_follow.strength, (int)e.click.enabled, e.click.motion_index, (int)e.unmirror,
-                 (int)e.drag.enabled, e.click.volume);
-        w.identity = id + groups;
+        snprintf(id, sizeof id, "%d|%d %.3f %.3f %.3f %.3f z%.3f|m%d f%.2f u%d|", w.model, (int)w.auto_view, w.body, w.x, w.y, w.h, w.scale,
+                 (int)e.mouse_follow.enabled, e.mouse_follow.strength, (int)e.unmirror);
+        w.identity = std::string(id) + "click " + Describe(e.click) + "|hover " + Describe(e.hover) + "|appear " + Describe(e.appear) + "|idle " +
+                     Describe(e.idle);
+        for (const auto& [name, action] : e.click_areas) w.identity += "|click_" + name + " " + Describe(action);
         int index = -1;
         for (size_t i = 0; i < wants.size(); ++i)
             if (wants[i].identity == w.identity) { index = (int)i; break; }
@@ -297,7 +324,16 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         p->view.height /= w.scale;  // live2d_scale: magnify around the middle of the framed part
         p->follow = w.follow;
         p->click = w.click;
-        p->voice_next.assign(w.click.voices.size(), 0);
+        p->hover = w.hover;
+        p->appear = w.appear;
+        p->idle = w.idle;
+        p->click_areas = w.click_areas;
+        p->states.resize(kStateAreas + w.click_areas.size());
+        p->states[kStateClick].voice_next.assign(w.click.voices.size(), 0);
+        p->states[kStateHover].voice_next.assign(w.hover.voices.size(), 0);
+        p->states[kStateAppear].voice_next.assign(w.appear.voices.size(), 0);
+        p->states[kStateIdle].voice_next.assign(w.idle.voices.size(), 0);
+        for (size_t i = 0; i < w.click_areas.size(); ++i) p->states[kStateAreas + i].voice_next.assign(w.click_areas[i].second.voices.size(), 0);
         p->unmirror = w.unmirror;
         p->identity = w.identity;
         presentation_of_want[wi] = (int)presentations.size();
@@ -450,30 +486,76 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
         if (d.seen.insert(id).second) Log("live2d: portrait %s is mirrored by the GUI; drawing %s flipped so it comes out the right way round", key, gs.slot->name.c_str());
     }
 
-    // a click on this portrait starts one of its touch motions
-    if (interactions && pr.click.enabled && ConsumeClick(portrait)) {
-        const ClickAction& click = pr.click;
-        const bool ok = character.PlayMotionFrom(click.motion_groups, click.motion_index);
-        // the line to say: the mod's entry for the motion's group (exact name first, then prefix patterns), else one of its `sounds`, else
-        // the Sound that model3.json gives the motion. Several lines are taken in turn, so one is not repeated at once.
+    // Events. What each does is the mod's: a motion picked from the model's own groups, an expression, a line to say.
+    auto fire = [&](const EventAction& act, ActionState& state, const char* what) {
+        const bool motion = !act.motion_groups.empty() && character.PlayMotionFrom(act.motion_groups, act.motion_index);
+        const bool expression = !act.expression.empty() && character.SetExpression(act.expression, act.expression_hold);
+        // the line to say: the mod's entry for the motion's group (exact name first, then prefix patterns), else one of its `sounds`, else the
+        // Sound that model3.json gives the motion. Several lines are taken in turn, so one is not repeated at once.
         std::filesystem::path line;
         int bound = -1;
-        if (ok) {
+        if (motion) {
             const std::string& group = character.last_motion_group();
-            for (size_t i = 0; i < click.voices.size() && bound < 0; ++i)
-                if (click.voices[i].pattern == group) bound = (int)i;
-            for (size_t i = 0; i < click.voices.size() && bound < 0; ++i) {
-                const std::string& pat = click.voices[i].pattern;
+            for (size_t i = 0; i < act.voices.size() && bound < 0; ++i)
+                if (act.voices[i].pattern == group) bound = (int)i;
+            for (size_t i = 0; i < act.voices.size() && bound < 0; ++i) {
+                const std::string& pat = act.voices[i].pattern;
                 if (!pat.empty() && pat.back() == '*' && group.rfind(pat.substr(0, pat.size() - 1), 0) == 0) bound = (int)i;
             }
         }
-        if (bound >= 0) line = click.voices[bound].lines[pr.voice_next[bound]++ % click.voices[bound].lines.size()];
-        else if (!click.sounds.empty()) line = click.sounds[pr.sound_next++ % click.sounds.size()];
-        else if (ok) line = character.last_motion_sound();
+        if (bound >= 0) line = act.voices[bound].lines[state.voice_next[bound]++ % act.voices[bound].lines.size()];
+        else if (!act.sounds.empty()) line = act.sounds[state.sound_next++ % act.sounds.size()];
+        else if (motion) line = character.last_motion_sound();
         bool said = false;
-        if (audio && !line.empty()) said = Voice::Get().Play(gs.slot.get(), line, click.volume);
-        Log("live2d: click on portrait %s (%s) -> %s%s%s", key, gs.slot->name.c_str(), ok ? character.last_motion_group().c_str() : "no matching motion",
-            line.empty() ? "" : (said ? ", saying " : ", could not play "), line.empty() ? "" : line.filename().string().c_str());
+        if (audio && !line.empty()) said = Voice::Get().Play(gs.slot.get(), line, act.volume);
+        std::string note = motion ? character.last_motion_group() : (act.motion_groups.empty() ? "no motion" : "no matching motion");
+        if (expression) note += ", expression " + act.expression;
+        else if (!act.expression.empty()) note += ", no expression " + act.expression;
+        if (!line.empty()) note += std::string(said ? ", saying " : ", could not play ") + line.filename().string();
+        Log("live2d: %s on portrait %s (%s) -> %s", what, key, gs.slot->name.c_str(), note.c_str());
+    };
+    if (interactions) {
+        PortraitEvent ev;
+        while (PopPortraitEvent(portrait, &ev)) {
+            if (ev.type == PortraitEvent::Type::Hover) {
+                if (pr.hover.enabled) fire(pr.hover, pr.states[kStateHover], "hover");
+                continue;
+            }
+            const EventAction* action = &pr.click;
+            ActionState* state = &pr.states[kStateClick];
+            if (!pr.click_areas.empty()) {  // which part of the model was clicked
+                const float u = PortraitMirrored(portrait) && !flip ? 1.0f - ev.u : ev.u;
+                float mx, my;
+                RectPointToModel(pr.view, character.model(), desc.Width, desc.Height, u, ev.v, &mx, &my);
+                const std::string area = character.HitTest(mx, my);
+                for (size_t i = 0; i < pr.click_areas.size() && !area.empty(); ++i) {
+                    if (SameName(pr.click_areas[i].first, area) && pr.click_areas[i].second.enabled) {
+                        action = &pr.click_areas[i].second;
+                        state = &pr.states[kStateAreas + i];
+                        break;
+                    }
+                }
+            }
+            if (action->enabled) fire(*action, *state, action == &pr.click ? "click" : "click on a hit area");
+        }
+        // the portrait shows up: the first time, a different portrait in the object, or back after a pause
+        Impl::Painted& painted = d.last_painted[portrait];
+        const bool appeared = painted.tick == 0 || painted.key != key || now - painted.tick > (uint64_t)(1.5 * TickFrequency());
+        painted.tick = now;
+        painted.key = key;
+        if (appeared && pr.appear.enabled) fire(pr.appear, pr.states[kStateAppear], "appear");
+        // now and then while it is shown, not over a motion an event started
+        if (pr.idle.enabled) {
+            auto schedule = [&]() {
+                const float seconds = pr.idle.interval_min + (pr.idle.interval_max - pr.idle.interval_min) * (float)(d.rng() % 1000) / 1000.0f;
+                pr.next_idle = now + (uint64_t)(seconds * TickFrequency());
+            };
+            if (pr.next_idle == 0) schedule();
+            else if (now >= pr.next_idle) {
+                if (!character.PlayingAction()) fire(pr.idle, pr.states[kStateIdle], "idle");
+                schedule();
+            }
+        }
     }
 
     if (gs.stepped != d.serial) {

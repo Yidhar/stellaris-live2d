@@ -5,6 +5,7 @@
 #include <windows.h>
 #include <shlobj.h>
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -47,15 +48,46 @@ bool ReadText(const fs::path& p, std::string* out) {
     return true;
 }
 
-// `name = yes` or `name = { enabled = yes ... }`; calls fill(block) for the block form
-template <typename Fill>
-bool Action(const pdx::Node& parent, const char* name, Fill fill) {
-    const pdx::Node* n = parent.Find(name);
-    if (!n) return false;
-    if (!n->block) return n->value == "yes" || n->value == "true";
-    if (!n->Bool("enabled", true)) return false;
-    fill(*n);
-    return true;
+// One event's settings: `click = { motion_group = "touch*" voices = { ... } sounds = { ... } volume = 1 expression = "smile" }`; the
+// block form is enabled unless it says `enabled = no`, the bare form is `click = yes`.
+void ParseAction(const pdx::Node& n, const fs::path& root, EventAction* a) {
+    a->enabled = n.block ? n.Bool("enabled", true) : (n.value == "yes" || n.value == "true");
+    if (!n.block) return;
+    auto absolute = [&](const std::string& s) { return (root / fs::u8path(s)).lexically_normal().string(); };
+    a->motion_groups = n.List("motion_groups");
+    if (!n.Str("motion_group").empty()) a->motion_groups.push_back(n.Str("motion_group"));
+    a->motion_index = (int)n.Num("motion_index", -1);
+    if (const pdx::Node* v = n.Find("voices"); v && v->block) {
+        for (const pdx::Node& b : v->children) {
+            if (b.key.empty()) continue;
+            VoiceBinding vb;
+            vb.pattern = b.key;
+            if (b.block) {
+                for (const pdx::Node& l : b.children)
+                    if (l.key.empty() && !l.block) vb.lines.push_back(absolute(l.value));
+            } else {
+                vb.lines.push_back(absolute(b.value));
+            }
+            if (!vb.lines.empty()) a->voices.push_back(std::move(vb));
+        }
+    }
+    std::vector<std::string> sounds = n.List("sounds");
+    if (!n.Str("sound").empty()) sounds.push_back(n.Str("sound"));
+    for (const std::string& s : sounds) a->sounds.push_back(absolute(s));
+    a->volume = (float)n.Num("volume", 1.0);
+    a->expression = n.Str("expression");
+    a->expression_hold = (float)n.Num("expression_hold", 3.0);
+    if (const pdx::Node* iv = n.Find("interval"); iv && iv->block) {
+        std::vector<double> v;
+        for (const pdx::Node& c : iv->children)
+            if (c.key.empty() && !c.block) v.push_back(std::strtod(c.value.c_str(), nullptr));
+        if (!v.empty()) {
+            a->interval_min = (float)v.front();
+            a->interval_max = (float)(v.size() > 1 ? v[1] : v.front());
+        }
+    }
+    if (a->interval_min < 1.0f) a->interval_min = 1.0f;
+    if (a->interval_max < a->interval_min) a->interval_max = a->interval_min;
 }
 
 void ReadEntry(const pdx::Node& e, const fs::path& root, const std::string& file, Registry* reg) {
@@ -81,33 +113,26 @@ void ReadEntry(const pdx::Node& e, const fs::path& root, const std::string& file
         p.view_h = (float)v->Num("height", p.view_h);
     }
     if (const pdx::Node* a = e.Find("live2d_actions"); a && a->block) {
-        p.mouse_follow.enabled = Action(*a, "mouse_follow", [&](const pdx::Node& n) { p.mouse_follow.strength = (float)n.Num("strength", 1.0); });
-        p.click.enabled = Action(*a, "click", [&](const pdx::Node& n) {
-            p.click.motion_groups = n.List("motion_groups");
-            if (!n.Str("motion_group").empty()) p.click.motion_groups.push_back(n.Str("motion_group"));
-            p.click.motion_index = (int)n.Num("motion_index", -1);
-            auto absolute = [&](const std::string& s) { return (root / fs::u8path(s)).lexically_normal().string(); };
-            if (const pdx::Node* v = n.Find("voices"); v && v->block) {
-                for (const pdx::Node& b : v->children) {
-                    if (b.key.empty()) continue;
-                    VoiceBinding vb;
-                    vb.pattern = b.key;
-                    if (b.block) {
-                        for (const pdx::Node& l : b.children)
-                            if (l.key.empty() && !l.block) vb.lines.push_back(absolute(l.value));
-                    } else {
-                        vb.lines.push_back(absolute(b.value));
-                    }
-                    if (!vb.lines.empty()) p.click.voices.push_back(std::move(vb));
-                }
+        for (const pdx::Node& c : a->children) {
+            if (c.key == "mouse_follow") {
+                p.mouse_follow.enabled = c.block ? c.Bool("enabled", true) : c.value == "yes";
+                p.mouse_follow.strength = (float)c.Num("strength", 1.0);
+            } else if (c.key == "click") {
+                ParseAction(c, root, &p.click);
+            } else if (c.key.rfind("click_", 0) == 0 && c.key.size() > 6) {
+                EventAction area;
+                ParseAction(c, root, &area);
+                p.click_areas.emplace_back(c.key.substr(6), std::move(area));
+            } else if (c.key == "hover") {
+                ParseAction(c, root, &p.hover);
+            } else if (c.key == "appear") {
+                ParseAction(c, root, &p.appear);
+            } else if (c.key == "idle") {
+                ParseAction(c, root, &p.idle);
+            } else if (!c.key.empty()) {
+                reg->messages.push_back(p.source + ": portrait " + p.key + ": live2d_actions has no action `" + c.key + "`; ignored");
             }
-            std::vector<std::string> sounds = n.List("sounds");
-            if (!n.Str("sound").empty()) sounds.push_back(n.Str("sound"));
-            for (const std::string& s : sounds) p.click.sounds.push_back((root / fs::u8path(s)).lexically_normal().string());
-            p.click.volume = (float)n.Num("volume", 1.0);
-            p.click.expression = n.Str("expression");
-        });
-        p.drag.enabled = Action(*a, "drag", [&](const pdx::Node& n) { p.drag.strength = (float)n.Num("strength", 1.0); });
+        }
     }
     // the last definition of a key wins
     for (PortraitEntry& old : reg->entries) {

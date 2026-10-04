@@ -22,6 +22,7 @@ add_library(l2d_core STATIC
     src/live2d_motion.cpp
     src/live2d_physics.cpp
     src/live2d_character.cpp
+    src/live2d_expression.cpp
     src/live2d_renderer.cpp
 )
 target_include_directories(l2d_core PUBLIC include third_party)
@@ -54,7 +55,7 @@ add_library(stellaris_live2d SHARED
     src/pdx_script.cpp
 )
 target_include_directories(stellaris_live2d PRIVATE include sdk)
-target_link_libraries(stellaris_live2d PRIVATE minhook l2d_core shell32 ole32)
+target_link_libraries(stellaris_live2d PRIVATE minhook l2d_core shell32 ole32 comctl32)
 # miniaudio is a large single header: warnings in it are not ours to fix
 if (MSVC)
     set_source_files_properties(src/voice.cpp PROPERTIES COMPILE_OPTIONS "/W0")

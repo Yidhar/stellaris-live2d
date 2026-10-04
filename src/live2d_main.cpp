@@ -137,9 +137,14 @@ l2d::Settings ReadIni(const std::string& path) {
 }
 
 [[noreturn]] void Finish() {
-    l2d::Uninstall();
-    l2d::Log("stellaris_live2d.dll unloading");
+    const bool safe = l2d::Uninstall();
     CloseHandle(g_unload_event);
+    if (!safe) {
+        // something of this DLL is still wired into the game (see the log): freeing it would crash the game later
+        l2d::Log("stellaris_live2d.dll stays loaded");
+        ExitThread(0);
+    }
+    l2d::Log("stellaris_live2d.dll unloading");
     FreeLibraryAndExitThread(g_module, 0);
 }
 

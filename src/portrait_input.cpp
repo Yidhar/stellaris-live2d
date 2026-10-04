@@ -1,17 +1,41 @@
 #include "portrait_input.hpp"
+#include "live2d.hpp"
 
 #include <windows.h>
+#include <commctrl.h>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <deque>
 #include <unordered_map>
 
 namespace l2d {
 
 namespace {
 
+constexpr UINT_PTR kSubclassId = 0x4C325C1;
+constexpr UINT kRemoveMessage = WM_APP + 0x4C3;
+constexpr ULONGLONG kFresh = 300;   // ms a portrait's rectangle stays good without a new draw
+constexpr ULONGLONG kEventAge = 500; // ms an event waits for its portrait
+
 HWND g_window = nullptr;
 ULONGLONG g_window_checked = 0;
-PortraitFrame g_frame;          // render thread only: set by the hook just before the painter asks
+std::atomic<HWND> g_subclassed{ nullptr };
+PortraitFrame g_frame;  // set by the hook just before the painter asks (the window thread: the same one that gets the messages)
+
+struct Seen {
+    ScreenRect rect;
+    float gui_w = 0, gui_h = 0;
+    ULONGLONG tick = 0;
+};
+std::unordered_map<const void*, Seen> g_rects;  // every portrait drawn lately
+struct Queued {
+    const void* portrait;
+    PortraitEvent event;
+    ULONGLONG tick;
+};
+std::deque<Queued> g_events;
+const void* g_hovered = nullptr;
 
 BOOL CALLBACK Pick(HWND hwnd, LPARAM param) {
     DWORD pid = 0;
@@ -52,47 +76,124 @@ bool MouseInGameWindow(float* x, float* y, float* width, float* height) {
     return true;
 }
 
-} // namespace
-
-// the last left button press seen: when, where (GUI units and client pixels), and a counter of presses
-uint64_t g_press_serial = 0;
-ULONGLONG g_press_time = 0;
-float g_press_gui_x = 0, g_press_gui_y = 0;
-int g_press_px = 0, g_press_py = 0;
-bool g_button_was_down = false;
-std::unordered_map<const void*, uint64_t> g_seen_press;  // per portrait: the press it has looked at
-
-void PollButton() {
-    bool down = false;
-    float mx, my, ww, wh;
-    if (MouseInGameWindow(&mx, &my, &ww, &wh)) down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-    if (down && !g_button_was_down && g_frame.has_mouse) {
-        ++g_press_serial;
-        g_press_time = GetTickCount64();
-        g_press_gui_x = g_frame.mouse_x;
-        g_press_gui_y = g_frame.mouse_y;
-        g_press_px = (int)mx;
-        g_press_py = (int)my;
+// The portrait whose picture holds the client pixel (px, py): among the portraits drawn lately whose rectangle (turned from GUI units
+// into client pixels) and clip area contain it, the one whose centre is nearest. u, v: where in that rectangle, 0..1.
+const void* PortraitAt(HWND hwnd, int px, int py, float* u, float* v) {
+    if (g_rects.empty()) return nullptr;
+    RECT client;
+    if (!GetClientRect(hwnd, &client) || client.right <= 0 || client.bottom <= 0) return nullptr;
+    const ULONGLONG now = GetTickCount64();
+    const void* best = nullptr;
+    float best_distance = 1e30f;
+    for (auto it = g_rects.begin(); it != g_rects.end();) {
+        const void* portrait = it->first;
+        const Seen& s = it->second;
+        if (now - s.tick > 4000) {  // long gone
+            it = g_rects.erase(it);
+            continue;
+        }
+        ++it;
+        if (now - s.tick > kFresh || s.gui_w <= 0 || s.gui_h <= 0) continue;
+        const float sx = (float)client.right / s.gui_w, sy = (float)client.bottom / s.gui_h;  // GUI units -> client pixels
+        const float x0 = s.rect.x * sx, y0 = s.rect.y * sy, w = s.rect.w * sx, h = s.rect.h * sy;
+        if (px < x0 || px > x0 + w || py < y0 || py > y0 + h) continue;
+        if (s.rect.has_clip && (px < s.rect.clip_x0 || px >= s.rect.clip_x1 || py < s.rect.clip_y0 || py >= s.rect.clip_y1)) continue;
+        const float dx = px - (x0 + w * 0.5f), dy = py - (y0 + h * 0.5f);
+        const float d = dx * dx + dy * dy;
+        if (d < best_distance) {
+            best_distance = d;
+            best = portrait;
+            *u = w > 0 ? (px - x0) / w : 0.5f;
+            *v = h > 0 ? (py - y0) / h : 0.5f;
+        }
     }
-    g_button_was_down = down;
+    return best;
 }
+
+void Queue(const void* portrait, PortraitEvent::Type type, float u, float v) {
+    g_events.push_back({ portrait, { type, u, v }, GetTickCount64() });
+    while (g_events.size() > 32) g_events.pop_front();
+}
+
+// The window's own thread, for every message the game window gets. Cheap when the pointer is not over a portrait: one pass over a
+// handful of rectangles, and nothing is changed or swallowed.
+LRESULT CALLBACK InputProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR) {
+    switch (msg) {
+    case WM_LBUTTONDOWN:
+    case WM_MOUSEMOVE: {
+        float u = 0, v = 0;
+        const void* portrait = PortraitAt(hwnd, (short)LOWORD(lp), (short)HIWORD(lp), &u, &v);
+        if (msg == WM_LBUTTONDOWN) {
+            if (portrait) Queue(portrait, PortraitEvent::Type::Click, u, v);
+        } else if (portrait != g_hovered) {
+            g_hovered = portrait;
+            if (portrait) Queue(portrait, PortraitEvent::Type::Hover, u, v);
+        }
+        break;
+    }
+    case kRemoveMessage:
+        RemoveWindowSubclass(hwnd, InputProc, id);
+        g_subclassed = nullptr;
+        return 1;
+    case WM_NCDESTROY:
+        RemoveWindowSubclass(hwnd, InputProc, id);
+        g_subclassed = nullptr;
+        break;
+    }
+    return DefSubclassProc(hwnd, msg, wp, lp);
+}
+
+// on the window's thread only (the portrait hook is on it): once per window
+void EnsureSubclass() {
+    HWND hwnd = GameWindow();
+    if (!hwnd || hwnd == g_subclassed.load()) return;
+    if (GetWindowThreadProcessId(hwnd, nullptr) != GetCurrentThreadId()) return;
+    if (SetWindowSubclass(hwnd, InputProc, kSubclassId, 0)) {
+        g_subclassed = hwnd;
+        Log("input: watching the mouse messages of the game window %p", (void*)hwnd);
+    }
+}
+
+} // namespace
 
 void SetPortraitFrame(const PortraitFrame& frame) {
     g_frame = frame;
-    PollButton();
+    EnsureSubclass();
+    if (frame.has_rect && frame.portrait) {
+        Seen& s = g_rects[frame.portrait];
+        s.rect = frame.rect;
+        s.gui_w = frame.gui_w;
+        s.gui_h = frame.gui_h;
+        s.tick = GetTickCount64();
+    }
+}
+
+bool ReleaseInput() {
+    HWND hwnd = g_subclassed.load();
+    if (!hwnd || !IsWindow(hwnd)) return true;
+    DWORD_PTR result = 0;
+    // the window's own thread runs InputProc for this message and takes the subclass off; it returns once that happened
+    if (!SendMessageTimeoutW(hwnd, kRemoveMessage, 0, 0, SMTO_ABORTIFHUNG | SMTO_BLOCK, 3000, &result)) {
+        Log("input: the game window did not answer; the plugin stays loaded");
+        return false;
+    }
+    return g_subclassed.load() == nullptr;
 }
 
 bool PortraitMirrored(const void* portrait) { return g_frame.portrait == portrait && g_frame.has_rect && g_frame.rect.mirrored; }
 
-bool ConsumeClick(const void* portrait) {
-    uint64_t& seen = g_seen_press[portrait];
-    if (seen == g_press_serial) return false;
-    seen = g_press_serial;
-    if (g_frame.portrait != portrait || !g_frame.has_rect || GetTickCount64() - g_press_time > 300) return false;
-    const ScreenRect& r = g_frame.rect;
-    if (g_press_gui_x < r.x || g_press_gui_x > r.x + r.w || g_press_gui_y < r.y || g_press_gui_y > r.y + r.h) return false;
-    if (r.has_clip && (g_press_px < r.clip_x0 || g_press_px >= r.clip_x1 || g_press_py < r.clip_y0 || g_press_py >= r.clip_y1)) return false;
-    return true;
+bool PopPortraitEvent(const void* portrait, PortraitEvent* out) {
+    const ULONGLONG now = GetTickCount64();
+    for (auto it = g_events.begin(); it != g_events.end();) {
+        if (now - it->tick > kEventAge) { it = g_events.erase(it); continue; }
+        if (it->portrait == portrait) {
+            *out = it->event;
+            g_events.erase(it);
+            return true;
+        }
+        ++it;
+    }
+    return false;
 }
 
 bool ComputeLookTarget(const void* portrait, float* x, float* y) {

@@ -1,5 +1,6 @@
 #pragma once
-// The inputs of the interactions a mod can declare: where the mouse pointer is and where a portrait is drawn on the screen.
+// The inputs of the interactions a mod can declare: where the mouse pointer is, where a portrait is drawn on the screen, and the
+// mouse events that land on a portrait's picture.
 namespace l2d {
 
 struct ScreenRect {
@@ -19,8 +20,13 @@ struct PortraitFrame {
     float gui_w = 0, gui_h = 0;  // the size of the GUI in GUI units (1920x1080 at UI scale 1 in a 1080p window)
 };
 
-// Called by the portrait hook before the portrait is painted, on the render thread.
+// Called by the portrait hook before the portrait is painted, on the render thread (which is the game window's thread: the first
+// call also puts a subclass on the window, which sees the mouse messages as the window gets them).
 void SetPortraitFrame(const PortraitFrame& frame);
+
+// Takes the window subclass off again. From the worker thread at unload: the window's own thread is asked to do it. False when that
+// did not happen (the game's window thread is hung): the DLL must then stay loaded.
+bool ReleaseInput();
 
 // Where a model should look so that it looks at the mouse pointer, as seen from the portrait: each axis -1..1 (x to the right
 // on the screen, y up; x is already flipped for a mirrored portrait). Without a known rectangle the portrait is taken to be in
@@ -30,9 +36,15 @@ bool ComputeLookTarget(const void* portrait, float* x, float* y);
 // Whether the portrait is drawn mirrored by the GUI (as of its last draw).
 bool PortraitMirrored(const void* portrait);
 
-// True once for each left mouse button press that landed on this portrait (inside the rectangle the GUI last drew it in and inside
-// its clip area), for a short while after the press. Only while the game window is in front. The press is not swallowed: the GUI
-// still sees it, so a button drawn over the portrait is pressed as well.
-bool ConsumeClick(const void* portrait);
+// A mouse event that landed on a portrait's picture: the left button went down on it, or the pointer came onto it. Where portraits
+// overlap, the one whose centre is nearest gets it. Only the part the GUI shows counts (inside its clip area). Nothing is swallowed:
+// the GUI still gets every message, so a button drawn over the portrait is pressed as well.
+struct PortraitEvent {
+    enum class Type { Click, Hover } type = Type::Click;
+    float u = 0, v = 0;  // where in the portrait's rectangle as drawn: 0..1 from its left and from its top
+};
+
+// The oldest event waiting for this portrait (events older than half a second are dropped); false when there is none.
+bool PopPortraitEvent(const void* portrait, PortraitEvent* out);
 
 } // namespace l2d

@@ -45,7 +45,8 @@ struct Settings {
 
 // Checks the exe against the SDK and hooks the portrait renderer (the hook passes through while nothing is enabled).
 bool Install(uintptr_t base);
-void Uninstall();
+// Returns false when something of the plugin could not be taken out of the game (a hung window): the DLL must then stay loaded.
+bool Uninstall();
 void Apply(const Settings& s, const Registry& registry);
 std::string StatsLine();
 

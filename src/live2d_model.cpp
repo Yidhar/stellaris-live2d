@@ -116,6 +116,23 @@ bool Model::Load(const core::Api* api, const fs::path& model3_json, std::string*
             textures.push_back(std::move(img));
         }
     }
+    if (refs.contains("Expressions")) {
+        for (const auto& e : refs["Expressions"]) {
+            const std::string name = e.value("Name", std::string()), file = e.value("File", std::string());
+            if (!name.empty() && !file.empty()) expressions[name] = directory / fs::u8path(file);
+        }
+    }
+    if (j.contains("HitAreas")) {
+        const char** ids = api_->GetDrawableIds(model_);
+        for (const auto& h : j["HitAreas"]) {
+            HitArea area;
+            area.name = h.value("Name", std::string());
+            const std::string id = h.value("Id", std::string());
+            for (int i = 0; i < drawable_count; ++i)
+                if (id == ids[i]) { area.drawable = i; break; }
+            if (area.drawable >= 0 && !area.name.empty()) hit_areas.push_back(std::move(area));
+        }
+    }
     if (refs.contains("Physics")) physics_file = directory / fs::u8path(refs["Physics"].get<std::string>());
     if (refs.contains("Motions")) {
         for (auto it = refs["Motions"].begin(); it != refs["Motions"].end(); ++it) {
@@ -131,6 +148,25 @@ bool Model::Load(const core::Api* api, const fs::path& model3_json, std::string*
         }
     }
     return true;
+}
+
+std::string Model::HitTest(float x, float y) const {
+    const core::Vec2** positions = api_->GetDrawableVertexPositions(model_);
+    const int* index_counts = api_->GetDrawableIndexCounts(model_);
+    const uint16_t** indices = api_->GetDrawableIndices(model_);
+    for (const HitArea& area : hit_areas) {
+        const core::Vec2* p = positions[area.drawable];
+        const uint16_t* ix = indices[area.drawable];
+        for (int t = 0; t + 2 < index_counts[area.drawable]; t += 3) {
+            const core::Vec2 &a = p[ix[t]], &b = p[ix[t + 1]], &c = p[ix[t + 2]];
+            const float d1 = (x - b.x) * (a.y - b.y) - (a.x - b.x) * (y - b.y);
+            const float d2 = (x - c.x) * (b.y - c.y) - (b.x - c.x) * (y - c.y);
+            const float d3 = (x - a.x) * (c.y - a.y) - (c.x - a.x) * (y - a.y);
+            const bool neg = d1 < 0 || d2 < 0 || d3 < 0, pos = d1 > 0 || d2 > 0 || d3 > 0;
+            if (!(neg && pos)) return area.name;
+        }
+    }
+    return std::string();
 }
 
 int Model::FindParameter(const std::string& id) const {

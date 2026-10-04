@@ -48,9 +48,11 @@ portraits = {
 		live2d_scale = 1.0         # magnifies the framed part around its centre: 1.25 shows a quarter less of the model
 		live2d_actions = {
 			mouse_follow = { enabled = yes  strength = 0.6 }
-			click        = { enabled = yes  motion_group = "touch*"  motion_index = -1 }   # or motion_groups = { touch_1 touch_2 }
-			                                                                              # + voices = { touch_1 = "sound/a.wav" }  sounds = { "sound/b.wav" }  volume = 1.0
-			drag         = { enabled = no   strength = 1.0 }
+			click      = { motion_group = "touch*" }                           # the left button went down on the picture
+			click_head = { motion_group = "touch*"  expression = "smile" }     # ... on a hit area of the model (click_<Name>)
+			hover      = { expression = "smile"  expression_hold = 1.5 }       # the pointer came onto the picture
+			appear     = { motion_group = "login" }                            # the portrait shows up
+			idle       = { motion_group = "wait*"  interval = { 15 30 } }      # now and then while it is shown
 		}
 	}
 }
@@ -61,19 +63,40 @@ portraits = {
 | `live2d`, `spine` | booleans: which runtime draws the portrait. Neither: the game draws it |
 | `live2d_model` | path of the `model3.json` relative to the mod root |
 | `live2d_view` | the part of the model canvas shown, as fractions of the canvas. `auto = yes` works it out from the model's geometry: it starts a little above the head and covers `body` (default `0.46`) of the figure's height. Otherwise `x`, `y` (centre from the left and from the top) and `height` |
-| `live2d_actions.mouse_follow` | the model looks towards the mouse pointer (`strength` 0..1): head turn (`ParamAngleX/Y/Z`), a little body lean (`ParamBodyAngleX`) and the eyes (`ParamEyeBallX/Y`), the values Cubism's own samples drive for a drag, eased over about 0.15 s and added on top of the motion every frame. Back to the middle while the game is not the foreground window. The ini key `interactions=0` turns all interactions off |
-| `live2d_unmirror` | the GUI mirrors some portraits (the council does for some slots), which reverses text and logos in a model. With this on (the default) the plugin draws the picture flipped in those portraits, so the GUI's mirror turns it back; the mouse follow accounts for it |
-| `live2d_actions.click` | a left click that lands on the portrait (inside the rectangle the GUI draws it in and its clip area) starts a motion from one of the groups named by `motion_group` or `motion_groups`, picked at random but never the one played last; `motion_index` -1 = a random motion of the group. A name ending in `*` matches every group that starts with the rest (`touch*` = `touch_1`, `touch_2`, ..., never `Idle`). The click is not swallowed: a button the GUI draws over the portrait is pressed too. `expression` is read but not implemented |
-| voice lines | what the portrait says when a click starts a motion. Per motion group: `voices = { touch_1 = "sound/a.wav"  touch_2 = { "sound/b.wav" "sound/c.wav" }  wait* = "..." }` (the key is the motion's group name, exact names are tried before prefix patterns ending in `*`; several lines are taken in turn; paths are inside the mod). A motion with no entry there says one of `sounds = { "sound/d.wav" "sound/e.ogg" }` (or `sound = "..."`, taken in turn), if the click names any, else the `Sound` of the motion in `model3.json` (the standard `"Sound": "voice/touch_1.wav"` key of a `Motions` entry, relative to the model's folder; it is how to bind a line to one particular motion file, not just a group). WAV, MP3, FLAC and Ogg Vorbis are played (not Opus or AAC). `click.volume` (default 1) scales a line; the ini keys `audio` (default 1) and `volume` (default 0.8) switch the voice off and set the master volume. A new line cuts off the portrait's previous one. Only motions started by a click speak; the idle and wait motions do not |
-| `live2d_actions.drag` | dragging on the portrait moves the model's look/body parameters |
 | `live2d_scale` | a fixed magnification of the framed part, around its centre (0.1 to 10, default 1): the framed height is divided by it, so 1.3 shows a bit more than three quarters of what `live2d_view` frames. A model is loaded once however many portrait keys use it, with whatever views and scales they give it; it also has one animation state, so two keys of one model that are on screen together show the same pose. There is no interactive zoom: it was left out as not needed |
+| `live2d_unmirror` | the GUI mirrors some portraits (the council does for some slots), which reverses text and logos in a model. With this on (the default) the plugin draws the picture flipped in those portraits, so the GUI's mirror turns it back; the mouse follow accounts for it |
+| `live2d_actions.mouse_follow` | the model looks towards the mouse pointer (`strength` 0..1): head turn (`ParamAngleX/Y/Z`), a little body lean (`ParamBodyAngleX`) and the eyes (`ParamEyeBallX/Y`), the values Cubism's own samples drive for a drag, eased over about 0.15 s and added on top of the motion every frame. Back to the middle while the game is not the foreground window. The ini key `interactions=0` turns all interactions and events off |
 
-**Status:** the registration, model loading and drawing work (checked in the game with a mod that replaces the human
-portraits). `mouse_follow` works (checked in the game: the head and eyes of the large leader portrait follow the pointer to the
-four screen edges, and in the council with the pointer around the four portraits, where the mirrored ones turn the right way).
-The look target is the pointer relative to the portrait's own place on the screen. `click` (motion and voice line) and `live2d_unmirror` are implemented
-(the click polls the left button once per frame, so a press shorter than a frame can be missed; a window drawn over the portrait does
-not stop the click from counting). `drag` is parsed and kept but not implemented.
+### Events
+
+`live2d_actions` maps events to what happens. The motion groups, expressions and hit areas are **the model's own**, named in its
+`model3.json` (`Motions`, `Expressions`, `HitAreas`): the mod does not register them, it only says which one an event plays. Models
+name their groups differently (`touch_1`, `touch_01`, `Tap`...), so a group can be given as a prefix ending in `*`.
+
+| Event | When |
+|---|---|
+| `click` | the left button goes down on the portrait's picture: inside the rectangle the GUI draws it in and inside its clip area, the nearest centre where portraits overlap. Only mouse messages that land there are looked at; every message still reaches the game, so a button drawn over the portrait is pressed as well, and a window drawn over it does not stop the click from counting |
+| `click_<Name>` | the same, when the click is on the hit area `<Name>` of the model (`click_head`, `click_body`, `click_leg` for the test models; the comparison ignores case). Falls back to `click` when the model has no such area or the area has no action |
+| `hover` | the pointer comes onto the picture |
+| `appear` | the portrait shows up: the first time, or again after not being drawn for a while (a screen opened) |
+| `idle` | every `interval = { min max }` seconds (random in between) while the portrait is shown, not over a motion an event started |
+
+Each action may have:
+
+| Key | Meaning |
+|---|---|
+| `motion_group = "touch*"` or `motion_groups = { a b }` | the groups to pick a motion from, at random but never the one played last; `*` at the end matches by prefix (never the `Idle` group). `motion_index` -1 = a random motion of the group. A motion that cannot be loaded makes the next group be tried |
+| `expression = "smile"` | an expression of the model (the `Name` of an `Expressions` entry, an `exp3.json` file); it fades in, stays `expression_hold` seconds (default 3; 0 = until another is set) and fades out |
+| `voices = { touch_1 = "sound/a.wav"  touch_2 = { "sound/b.wav" "sound/c.wav" } }` | the lines a motion group says: the key is a group name (exact names are tried before prefix patterns ending in `*`); several lines are taken in turn; paths are inside the mod |
+| `sounds = { "sound/d.wav" "sound/e.ogg" }` or `sound = "..."` | the lines any other motion of the action says, in turn. A motion with neither says the `Sound` of the motion in `model3.json` (the standard key of a `Motions` entry, relative to the model's folder: the way to bind a line to one particular motion file) |
+| `volume = 1` | scales the lines against the master volume |
+
+WAV, MP3, FLAC and Ogg Vorbis lines are played (not Opus or AAC); a new line cuts off the portrait's previous one. The ini keys `audio`
+(default 1) and `volume` (default 0.8) switch the voice off and set the master volume.
+
+**Status:** registration, model loading, drawing, `mouse_follow`, `live2d_unmirror`, `live2d_scale` and the events above are implemented.
+Not yet: Spine; a `greeting` event for the engine's own greeting sound; poses (`pose3.json`: no test model has one); the eye blink,
+breath and lip sync groups; an interactive drag (not wanted).
 
 ## Making a mod
 

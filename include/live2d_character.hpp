@@ -1,5 +1,6 @@
 #pragma once
 // A model that lives: its motion player, the idle loop, and the per-frame order Cubism prescribes.
+#include "live2d_expression.hpp"
 #include "live2d_model.hpp"
 #include "live2d_motion.hpp"
 #include "live2d_physics.hpp"
@@ -30,6 +31,16 @@ public:
     // the Idle group only by its exact name). Avoids the group played last when there is another. False when none matches.
     bool PlayMotionFrom(const std::vector<std::string>& patterns, int index = -1);
     const std::string& last_motion_group() const { return last_group_; }
+    // Shows an expression of the model (the Name of its model3.json Expressions) for `hold` seconds (0: until another is set); false when
+    // the model has no such expression.
+    bool SetExpression(const std::string& name, float hold);
+
+    // True while a motion other than the idle loop is still playing (an event's motion: not to be cut short by an idle one).
+    bool PlayingAction() const { return now_ < action_until_; }
+
+    // The hit area at a point of the model (model units, y up): its name, or empty.
+    std::string HitTest(float x, float y) const { return model_.HitTest(x, y); }
+
     // the voice line of the motion most recently started by PlayMotion (empty: none)
     const std::filesystem::path& last_motion_sound() const { return last_sound_; }
 
@@ -56,6 +67,9 @@ private:
     float now_ = 0.0f;
     std::string last_group_;
     std::filesystem::path last_sound_;
+    float action_until_ = 0.0f;
+    ExpressionPlayer expressions_;
+    std::map<std::string, std::shared_ptr<Expression>> expression_cache_;
     std::mt19937 rng_{ std::random_device{}() };
 };
 

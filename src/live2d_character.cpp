@@ -41,6 +41,24 @@ bool Character::PlayMotionFrom(const std::vector<std::string>& patterns, int ind
     return false;
 }
 
+bool Character::SetExpression(const std::string& name, float hold) {
+    auto cached = expression_cache_.find(name);
+    std::shared_ptr<Expression> expression;
+    if (cached != expression_cache_.end()) {
+        expression = cached->second;
+    } else {
+        auto file = model_.expressions.find(name);
+        if (file == model_.expressions.end()) return false;
+        expression = std::make_shared<Expression>();
+        std::string err;
+        if (!expression->Load(file->second, &err)) return false;
+        expression->Bind(model_);
+        expression_cache_[name] = expression;
+    }
+    expressions_.Set(expression, now_, hold);
+    return true;
+}
+
 void Character::SetLookTarget(float x, float y, float weight) {
     look_target_x_ = std::clamp(x, -1.0f, 1.0f);
     look_target_y_ = std::clamp(y, -1.0f, 1.0f);
@@ -71,6 +89,7 @@ bool Character::PlayMotion(const std::string& group, int index) {
     if (!motion) return false;
     player_.Start(motion, now_, group == "Idle" ? 1 : 0);
     last_sound_ = model_.motions[group][index].sound;
+    if (group != "Idle") action_until_ = now_ + std::max(0.1f, motion->duration);
     return true;
 }
 
@@ -80,6 +99,7 @@ void Character::Tick(float dt) {
     if (!player_.Playing()) PlayMotion("Idle");
     player_.Update(model_, now_);
     model_.SaveParameters();
+    expressions_.Update(model_, now_);  // after the save, like the look: it must not accumulate
     // Look at the target: ease towards it (about 0.15 s), then add what Cubism's samples add for a drag: head, a little body
     // lean and the eyes. Added after SaveParameters, so it never accumulates, and before the physics, so hair follows the head.
     const float ease = 1.0f - std::exp(-dt / 0.15f);

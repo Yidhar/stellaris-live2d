@@ -446,10 +446,11 @@ bool Install(uintptr_t base) {
     return true;
 }
 
-void Uninstall() {
-    if (!g_installed) { g_mode = 0; Painter().Shutdown(); return; }
+bool Uninstall() {
+    if (!g_installed) { g_mode = 0; Painter().Shutdown(); return ReleaseInput(); }
     StopPainting();
     Sleep(300);  // a few frames for the engine to re-render the portraits it was flagged to
+    const bool input_released = ReleaseInput();  // the window subclass: its code is in this DLL
     MH_DisableHook(MH_ALL_HOOKS);
     // a render thread may still be inside the detour or its trampoline: wait until it has left, then a moment more
     for (int i = 0; i < 1000 && g_in_hook.load() != 0; ++i) Sleep(10);
@@ -457,6 +458,7 @@ void Uninstall() {
     MH_Uninitialize();
     g_installed = false;
     Painter().Shutdown();
+    return input_released;
 }
 
 void Apply(const Settings& s, const Registry& registry) {

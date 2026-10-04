@@ -50,8 +50,11 @@ def entry(key, model, sounds):
 		live2d_view = {view}
 		live2d_actions = {{
 			mouse_follow = {{ enabled = yes  strength = 0.6 }}
-			click = {{ enabled = yes  motion_group = "touch*"{say} }}
-			drag = {{ enabled = no }}
+			click = {{ motion_group = "touch*"{say} }}
+			click_head = {{ motion_group = "touch*" expression = "smile"{say} }}
+			hover = {{ expression = "smile"  expression_hold = 1.5 }}
+			appear = {{ motion_group = "login" }}
+			idle = {{ motion_group = "wait*"  interval = {{ 15 30 }} }}
 		}}
 	}}
 """
@@ -70,6 +73,19 @@ def main():
         shutil.rmtree(a.out)
     for model in sorted(set(ASSIGN.values())):
         shutil.copytree(os.path.join(a.models, model), os.path.join(a.out, "gfx", "live2d", model))
+        # the test models have no expressions: give each a small one, the way a model author would (exp3.json + the entry in model3.json)
+        folder = os.path.join(a.out, "gfx", "live2d", model)
+        os.makedirs(os.path.join(folder, "expressions"), exist_ok=True)
+        with open(os.path.join(folder, "expressions", "smile.exp3.json"), "w", encoding="utf-8") as f:
+            json.dump({"Type": "Live2D Expression", "FadeInTime": 0.4, "FadeOutTime": 0.6, "Parameters": [
+                {"Id": "ParamCheek", "Value": 1, "Blend": "Add"}, {"Id": "ParamEyeLSmile", "Value": 1, "Blend": "Add"},
+                {"Id": "ParamEyeRSmile", "Value": 1, "Blend": "Add"}, {"Id": "ParamMouthForm", "Value": 0.8, "Blend": "Add"}]}, f, indent=1)
+        model3 = os.path.join(folder, "model.model3.json")
+        with open(model3, encoding="utf-8") as f:
+            doc = json.load(f)
+        doc["FileReferences"]["Expressions"] = [{"Name": "smile", "File": "expressions/smile.exp3.json"}]
+        with open(model3, "w", encoding="utf-8") as f:
+            json.dump(doc, f, indent=1)
     sounds = []
     if os.path.isdir(a.voices):
         for name in sorted(os.listdir(a.voices)):
