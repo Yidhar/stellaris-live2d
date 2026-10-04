@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cmath>
 #include <deque>
+#include <utility>
 #include <unordered_map>
 
 namespace l2d {
@@ -41,12 +42,14 @@ BOOL CALLBACK Pick(HWND hwnd, LPARAM param) {
     DWORD pid = 0;
     GetWindowThreadProcessId(hwnd, &pid);
     if (pid != GetCurrentProcessId() || !IsWindowVisible(hwnd) || GetWindow(hwnd, GW_OWNER)) return TRUE;
-    RECT r;
-    if (!GetClientRect(hwnd, &r) || r.right < 320 || r.bottom < 240) return TRUE;
-    auto* best = (HWND*)param;
-    RECT b = {};
-    if (*best) GetClientRect(*best, &b);
-    if (!*best || (r.right * r.bottom > b.right * b.bottom)) *best = hwnd;
+    // the game's window is the one titled "Stellaris", whatever its size (it is 0x0 while minimized); failing that the largest
+    wchar_t title[64] = {};
+    GetWindowTextW(hwnd, title, 64);
+    RECT r = {};
+    GetWindowRect(hwnd, &r);
+    const long long area = (long long)(r.right - r.left) * (r.bottom - r.top) + (wcscmp(title, L"Stellaris") == 0 ? (1ll << 40) : 0);
+    auto* best = (std::pair<HWND, long long>*)param;
+    if (!best->first || area > best->second) *best = { hwnd, area };
     return TRUE;
 }
 
@@ -56,9 +59,9 @@ HWND GameWindow() {
     if (g_window && IsWindow(g_window)) return g_window;
     if (now - g_window_checked < 1000) return nullptr;
     g_window_checked = now;
-    HWND best = nullptr;
+    std::pair<HWND, long long> best{ nullptr, 0 };
     EnumWindows(Pick, (LPARAM)&best);
-    g_window = best;
+    g_window = best.first;
     return g_window;
 }
 
@@ -145,12 +148,22 @@ LRESULT CALLBACK InputProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR i
 
 // on the window's thread only (the portrait hook is on it): once per window
 void EnsureSubclass() {
+    static ULONGLONG last_try = 0;
     HWND hwnd = GameWindow();
     if (!hwnd || hwnd == g_subclassed.load()) return;
-    if (GetWindowThreadProcessId(hwnd, nullptr) != GetCurrentThreadId()) return;
+    const ULONGLONG now = GetTickCount64();
+    if (now - last_try < 5000) return;  // not on every frame while it keeps failing
+    last_try = now;
+    if (GetWindowThreadProcessId(hwnd, nullptr) != GetCurrentThreadId()) {
+        Log("input: the game window %p belongs to thread %lu, the portrait hook runs on thread %lu: mouse events are not available", (void*)hwnd,
+            GetWindowThreadProcessId(hwnd, nullptr), GetCurrentThreadId());
+        return;
+    }
     if (SetWindowSubclass(hwnd, InputProc, kSubclassId, 0)) {
         g_subclassed = hwnd;
         Log("input: watching the mouse messages of the game window %p", (void*)hwnd);
+    } else {
+        Log("input: could not subclass the game window %p (error %lu): mouse events are not available", (void*)hwnd, GetLastError());
     }
 }
 

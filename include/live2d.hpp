@@ -34,6 +34,8 @@ struct Settings {
     };
     std::vector<ModelEntry> models;
     std::vector<std::string> extra_mod_dirs;  // mod root folders read as if they were enabled (development)
+    int model_cache_mb = 512;  // memory the loaded models may take (0 = no limit): within it every model is loaded in advance, beyond it
+                               // on demand, and the model unused for longest is dropped to make room
     bool audio = true;     // play the voice lines of motions started by interactions
     float volume = 0.8f;   // master volume of those, 0..1
     bool interactions = true;  // the mouse follow (and later click, drag, zoom) that mods declare; off = models just play

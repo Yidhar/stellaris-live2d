@@ -150,6 +150,13 @@ bool Model::Load(const core::Api* api, const fs::path& model3_json, std::string*
     return true;
 }
 
+void Model::ReleaseTextures() {
+    for (Image& img : textures) {
+        for (auto& level : img.mips) std::vector<uint8_t>().swap(level);
+    }
+    textures_released = true;
+}
+
 std::string Model::HitTest(float x, float y) const {
     const core::Vec2** positions = api_->GetDrawableVertexPositions(model_);
     const int* index_counts = api_->GetDrawableIndexCounts(model_);

@@ -54,6 +54,10 @@ public:
     float pixels_per_unit = 1.0f;
 
     std::vector<Image> textures;
+    // Frees the pixel data of the textures (the sizes stay): once the GPU has them nothing needs the copy in memory. A model whose
+    // textures were released cannot be uploaded again; load it again.
+    void ReleaseTextures();
+    bool textures_released = false;
     std::map<std::string, std::vector<MotionRef>> motions;  // by group
     std::map<std::string, std::filesystem::path> expressions;  // the Expressions of model3.json: Name -> exp3.json
     struct HitArea {

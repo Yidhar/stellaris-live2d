@@ -9,7 +9,13 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <condition_variable>
+#include <deque>
+#include <filesystem>
+#include <fstream>
 #include <map>
+#include <nlohmann/json.hpp>
+#include <thread>
 #include <random>
 #include <mutex>
 #include <set>
@@ -53,14 +59,82 @@ struct Frame {
     uint64_t serial = 0;  // the step this frame was drawn for
 };
 
-// One loaded model, once, however many portrait keys use it: the Core model with its textures, motions and physics, and its
-// animation state. Shared between the worker and the render thread; after it is published only the render thread touches the
-// character.
-struct Slot {
-    std::string path, name;
+// A model in memory: the Core model with its motions and physics and its animation state, and the GPU resources made from its
+// textures. Once published only the render thread touches the character.
+struct Loaded {
+    std::shared_ptr<core::Api> api;  // keeps the Core library alive as long as the model
     std::shared_ptr<Character> character;
-    Model::PortraitBounds bounds;  // measured at load, while nobody else used the model
+    Model::PortraitBounds bounds;    // measured at load, while nobody else used the model
+    uint64_t serial = 0;             // tells one loading of a model from another
+    std::mutex gpu_mutex;
+    Renderer::GpuPtr gpu;
+    ID3D11Device* gpu_device = nullptr;  // the device the resources are for (not a reference)
 };
+
+// One model of the mods, however many portrait keys use it. A slot exists as soon as a mod names the model; the model itself is loaded in
+// the background (in advance, or when a portrait first needs it) and may be dropped again to make room.
+struct Slot {
+    enum class State { Idle, Queued, Loading, Failed };
+    std::string path, name;
+    size_t estimate = 0;              // bytes it takes once loaded
+    std::shared_ptr<Loaded> loaded;   // under Impl::mutex
+    State state = State::Idle;        // under Impl::mutex
+    std::atomic<uint64_t> last_used{ 0 };
+};
+
+std::atomic<uint64_t> g_loaded_serial{ 1 };
+
+// What a model takes once loaded, worked out from the sizes of its files without reading them: the moc3 and the textures (a DDS file is what
+// the GPU gets; a PNG decodes to RGBA with mips).
+size_t EstimateBytes(const std::string& model3) {
+    namespace fs = std::filesystem;
+    size_t bytes = 1u << 20;  // the Core model, motions and physics
+    try {
+        std::ifstream f(fs::u8path(model3));
+        const auto j = nlohmann::json::parse(f);
+        const fs::path dir = fs::u8path(model3).parent_path();
+        const auto& refs = j["FileReferences"];
+        std::error_code ec;
+        if (refs.contains("Moc")) bytes += (size_t)fs::file_size(dir / fs::u8path(refs["Moc"].get<std::string>()), ec);
+        for (const auto& t : refs.value("Textures", nlohmann::json::array())) {
+            const fs::path file = dir / fs::u8path(t.get<std::string>());
+            const size_t size = (size_t)fs::file_size(file, ec);
+            if (file.extension() == ".dds") {
+                bytes += size;
+            } else if (file.extension() == ".png") {
+                std::ifstream png(file, std::ios::binary);
+                unsigned char h[24] = {};
+                png.read((char*)h, 24);
+                const size_t w = (size_t)h[16] << 24 | (size_t)h[17] << 16 | (size_t)h[18] << 8 | h[19];
+                const size_t ht = (size_t)h[20] << 24 | (size_t)h[21] << 16 | (size_t)h[22] << 8 | h[23];
+                bytes += w * ht * 4 * 4 / 3;
+            } else {
+                bytes += size * 8;
+            }
+        }
+    } catch (...) {
+    }
+    return bytes;
+}
+
+// The GPU resources of a loaded model for `device`, made if missing (by the loader just after the load, or by the render thread, whichever
+// comes first), and the pixel data of the textures freed once the GPU has them. False when that cannot be done because the textures were
+// already freed for another device: the model has to be loaded again.
+bool EnsureGpu(Loaded& l, Renderer& renderer, ID3D11Device* device, std::string* error) {
+    std::lock_guard<std::mutex> lock(l.gpu_mutex);
+    if (l.gpu && l.gpu_device == device) return true;
+    l.gpu.reset();
+    Model& model = l.character->model();
+    if (model.textures_released) {
+        *error = "its textures were freed for another device";
+        return false;
+    }
+    l.gpu = renderer.CreateModel(model, error);
+    if (!l.gpu) return false;
+    l.gpu_device = device;
+    model.ReleaseTextures();
+    return true;
+}
 
 // How a portrait key shows a model: the framing, and what it does when the mouse is near or it is clicked. Cheap: the model, its
 // textures and its animation are the slot's; this holds only settings, and the frames drawn for it.
@@ -72,7 +146,11 @@ enum { kStateClick = 0, kStateHover = 1, kStateAppear = 2, kStateIdle = 3, kStat
 
 struct Presentation {
     int slot = -1;  // index into the slots
-    View view;
+    bool auto_view = false;
+    float body = 0.46f, scale = 1.0f;
+    View base_view;                 // the view as given (when it is not automatic)
+    View view;                      // the view in use: worked out from the loaded model's bounds when automatic
+    uint64_t view_serial = 0;       // the loading of the model that `view` was worked out for
     MouseFollow follow;
     EventAction click, hover, appear, idle;
     std::vector<std::pair<std::string, EventAction>> click_areas;
@@ -89,6 +167,20 @@ struct Live2DPainter::Impl {
     std::mutex mutex;
     std::shared_ptr<core::Api> api;
     std::vector<std::shared_ptr<Slot>> slots;
+    std::unordered_map<std::string, std::shared_ptr<Slot>> slot_by_path;  // every model a mod names
+    struct Request {
+        std::shared_ptr<Slot> slot;  // null: make the GPU resources of the loaded models
+        bool demand = false;         // a portrait waits for it (otherwise a load in advance, which pushes nothing out)
+    };
+    std::deque<Request> queue;
+    std::condition_variable cv;
+    std::thread loader;
+    bool stop = false;
+    size_t loaded_bytes = 0, budget = (size_t)512 << 20;
+    std::shared_ptr<Renderer> shared_renderer;  // the render thread's renderer and device, for the loader to make GPU resources with
+    ID3D11Device* shared_device = nullptr;
+    void LoaderMain();
+    void EvictFor(size_t need, const Slot* keep);  // with the mutex held
     std::vector<std::shared_ptr<Presentation>> presentations;
     uint64_t generation = 0;  // changes whenever the slots or presentations do
     int fps = 30;
@@ -104,13 +196,13 @@ struct Live2DPainter::Impl {
     // --- render thread only
     struct GpuSlot {
         std::shared_ptr<Slot> slot;
-        Renderer::GpuPtr gpu;
         std::map<std::pair<int, uint64_t>, Frame> frames;  // by presentation, then output size, format and flip
         uint64_t stepped = 0;                              // the last step this model was advanced for
+        uint64_t loaded_serial = 0;                        // the loading of the model the frames and `stepped` belong to
     };
     ComPtr<ID3D11Device> device;
     ComPtr<ID3D11DeviceContext> deferred;
-    std::unique_ptr<Renderer> renderer;
+    std::shared_ptr<Renderer> renderer;
     std::vector<GpuSlot> gpu_slots;
     std::vector<std::shared_ptr<Presentation>> gpu_presentations;
     uint64_t gpu_generation = 0;
@@ -130,7 +222,8 @@ struct Live2DPainter::Impl {
     std::mt19937 rng{ std::random_device{}() };
 
     // --- statistics
-    std::atomic<uint64_t> ticks{ 0 }, draws{ 0 }, copies{ 0 }, failures{ 0 }, assigned{ 0 }, slot_count{ 0 }, skipped{ 0 };
+    std::atomic<uint64_t> ticks{ 0 }, draws{ 0 }, copies{ 0 }, failures{ 0 }, assigned{ 0 }, slot_count{ 0 }, skipped{ 0 }, waiting{ 0 };
+    std::atomic<uint64_t> loads{ 0 }, evictions{ 0 }, loaded_now{ 0 }, loaded_mb{ 0 };
     std::atomic<uint64_t> tick_ticks{ 0 }, draw_ticks{ 0 }, copy_ticks{ 0 };
 
     void ResetGpu() {
@@ -152,6 +245,124 @@ Live2DPainter::~Live2DPainter() = default;
 Live2DPainter& Painter() {
     static Live2DPainter painter;
     return painter;
+}
+
+// Drops loaded models, the one unused for longest first (and none used in the last few seconds), until `need` more bytes fit in the budget.
+void Live2DPainter::Impl::EvictFor(size_t need, const Slot* keep) {
+    const uint64_t now = Ticks();
+    const uint64_t quiet = (uint64_t)(3.0 * TickFrequency());
+    std::vector<std::shared_ptr<Slot>> candidates;
+    for (auto& [path, slot] : slot_by_path)
+        if (slot.get() != keep && slot->loaded && now - slot->last_used.load() > quiet) candidates.push_back(slot);
+    std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) { return a->last_used.load() < b->last_used.load(); });
+    for (const auto& slot : candidates) {
+        if (loaded_bytes + need <= budget) break;
+        Log("live2d: dropping %s from memory (the model cache is full)", slot->name.c_str());
+        slot->loaded.reset();
+        loaded_bytes -= std::min(loaded_bytes, slot->estimate);
+        ++evictions;
+    }
+}
+
+// The loader thread: models are loaded here, never on the game's render thread, and their textures are uploaded here as soon as the render
+// thread has shown its device.
+void Live2DPainter::Impl::LoaderMain() {
+    for (;;) {
+        Request req;
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            cv.wait(lock, [&] { return stop || !queue.empty(); });
+            if (stop) return;
+            req = std::move(queue.front());
+            queue.pop_front();
+        }
+        if (!req.slot) {  // the render thread has a device now: put the loaded models' textures on it
+            std::vector<std::shared_ptr<Loaded>> todo;
+            std::shared_ptr<Renderer> r;
+            ID3D11Device* dev;
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                for (auto& [path, slot] : slot_by_path)
+                    if (slot->loaded) todo.push_back(slot->loaded);
+                r = shared_renderer;
+                dev = shared_device;
+            }
+            for (auto& l : todo) {
+                std::string e;
+                if (r && !EnsureGpu(*l, *r, dev, &e)) Log("live2d: GPU resources: %s", e.c_str());
+            }
+            continue;
+        }
+        std::shared_ptr<core::Api> api_copy;
+        bool physics_copy;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            Slot& s = *req.slot;
+            if (s.loaded || s.state == Slot::State::Failed) {
+                if (s.state == Slot::State::Queued) s.state = Slot::State::Idle;
+                continue;
+            }
+            if (loaded_bytes + s.estimate > budget) {
+                if (!req.demand) {  // a load in advance only fills what is free
+                    s.state = Slot::State::Idle;
+                    continue;
+                }
+                EvictFor(s.estimate, &s);
+            }
+            s.state = Slot::State::Loading;
+            api_copy = api;
+            physics_copy = physics;
+        }
+        Slot& slot = *req.slot;
+        auto fail = [&](const std::string& why) {
+            std::lock_guard<std::mutex> lock(mutex);
+            slot.state = Slot::State::Failed;
+            Log("live2d: cannot load %s: %s", slot.path.c_str(), why.c_str());
+        };
+        if (!api_copy) {
+            fail("the Cubism Core is not loaded");
+            continue;
+        }
+        const uint64_t t0 = Ticks();
+        auto loaded = std::make_shared<Loaded>();
+        loaded->api = api_copy;
+        loaded->character = std::make_shared<Character>();
+        std::string err;
+        if (!loaded->character->Load(api_copy.get(), slot.path, &err)) {
+            fail(err);
+            continue;
+        }
+        loaded->character->set_physics_enabled(physics_copy);
+        if (!loaded->character->physics_error().empty()) Log("live2d: %s: physics not loaded: %s", slot.path.c_str(), loaded->character->physics_error().c_str());
+        loaded->bounds = loaded->character->model().MeasurePortrait();
+        loaded->serial = g_loaded_serial++;
+        std::shared_ptr<Renderer> r;
+        ID3D11Device* dev;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            r = shared_renderer;
+            dev = shared_device;
+        }
+        const Model& m = loaded->character->model();
+        const double texture_mb = [&] { size_t b = 0; for (const Image& i : m.textures) b += i.Bytes(); return b / 1048576.0; }();
+        const int canvas_w = (int)m.canvas_size.x, canvas_h = (int)m.canvas_size.y;
+        std::string gpu_err;
+        const bool uploaded = r && EnsureGpu(*loaded, *r, dev, &gpu_err);
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            const auto known = slot_by_path.find(slot.path);
+            if (stop || known == slot_by_path.end() || known->second.get() != &slot) {
+                slot.state = Slot::State::Idle;  // no mod names it any more
+                continue;
+            }
+            slot.loaded = loaded;
+            slot.state = Slot::State::Idle;
+            loaded_bytes += slot.estimate;
+            ++loads;
+        }
+        Log("live2d: loaded %s in %.0f ms in the background: canvas %dx%d, %zu textures (%.1f MB)%s", slot.name.c_str(), (Ticks() - t0) * 1000.0 / TickFrequency(),
+            canvas_w, canvas_h, m.textures.size(), texture_mb, uploaded ? ", on the GPU" : "");
+    }
 }
 
 void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
@@ -247,6 +458,9 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         if (!d.slots.empty()) {
             Log("live2d: models unloaded");
             d.slots.clear();
+            d.slot_by_path.clear();
+            d.queue.clear();
+            d.loaded_bytes = 0;
             d.presentations.clear();
             d.by_key.clear();
             d.loaded_signature.clear();
@@ -254,25 +468,23 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         }
         return;
     }
-    std::unordered_map<std::string, std::shared_ptr<Slot>> loaded;  // models already in memory, to keep when they are still wanted
     std::shared_ptr<core::Api> api;
     {
         std::lock_guard<std::mutex> lock(d.mutex);
         d.fps = s.fps < 1 ? 1 : s.fps > 120 ? 120 : s.fps;
         d.interactions = s.interactions;
         d.audio = s.audio;
+        d.budget = s.model_cache_mb > 0 ? (size_t)s.model_cache_mb << 20 : (size_t)-1;
         if (d.physics != s.physics) {
             d.physics = s.physics;
-            for (auto& slot : d.slots) slot->character->set_physics_enabled(s.physics);
+            for (auto& [path, slot] : d.slot_by_path)
+                if (slot->loaded) slot->loaded->character->set_physics_enabled(s.physics);
         }
         if (!d.slots.empty() && d.loaded_signature == signature) return;
-        if (d.api && d.loaded_core == s.core_dll) {
-            api = d.api;
-            for (const auto& slot : d.slots) loaded[slot->path] = slot;
-        }
+        if (d.api && d.loaded_core == s.core_dll) api = d.api;
     }
 
-    // load outside the lock: the render thread keeps drawing whatever is current
+    // the Core library: loaded here, outside the lock
     std::string err;
     if (!api) {
         api = std::make_shared<core::Api>();
@@ -282,45 +494,48 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         }
         Log("live2d: Cubism Core loaded from %s (version 0x%08X)", s.core_dll.c_str(), api->GetVersion());
     }
-    std::vector<std::shared_ptr<Slot>> slots;
-    std::vector<int> slot_of_path(paths.size(), -1);
-    for (size_t pi = 0; pi < paths.size(); ++pi) {
-        auto kept = loaded.find(paths[pi]);
-        if (kept != loaded.end()) {  // a model that stays is neither loaded nor uploaded again, and keeps its animation
-            slot_of_path[pi] = (int)slots.size();
-            slots.push_back(kept->second);
-            continue;
-        }
-        const uint64_t t0 = Ticks();
-        auto character = std::make_shared<Character>();
-        if (!character->Load(api.get(), paths[pi], &err)) {
-            Log("live2d: cannot load %s: %s", paths[pi].c_str(), err.c_str());
-            continue;
-        }
-        character->set_physics_enabled(s.physics);
-        if (!character->physics_error().empty()) Log("live2d: %s: physics not loaded: %s", paths[pi].c_str(), character->physics_error().c_str());
-        auto slot = std::make_shared<Slot>();
-        slot->path = paths[pi];
-        slot->character = character;
-        slot->name = std::filesystem::path(paths[pi]).parent_path().filename().string();
-        slot->bounds = character->model().MeasurePortrait();
-        const Model& m = character->model();
-        Log("live2d: loaded %s in %.0f ms: canvas %.0fx%.0f, %d parameters, %d drawables, %zu textures (%.1f MB)", slot->name.c_str(),
-            (Ticks() - t0) * 1000.0 / TickFrequency(), m.canvas_size.x, m.canvas_size.y, m.parameter_count, m.drawable_count, m.textures.size(),
-            [&] { size_t b = 0; for (const Image& i : m.textures) b += i.Bytes(); return b / 1048576.0; }());
-        slot_of_path[pi] = (int)slots.size();
-        slots.push_back(std::move(slot));
+    if (!d.loader.joinable()) d.loader = std::thread(&Impl::LoaderMain, &d);
+
+    // The models are not loaded here: a slot per model is made (or kept, with what is loaded of it) and the loader thread is asked to load
+    // them in advance as far as the memory limit allows; a portrait that needs one before that asks for it itself.
+    std::lock_guard<std::mutex> lock(d.mutex);
+    if (d.api != api) {  // another Core library: nothing loaded with the old one may stay
+        d.slot_by_path.clear();
+        d.queue.clear();
+        d.loaded_bytes = 0;
     }
-    // the presentations: a view worked out from the model's measured bounds or given, magnified by the scale
+    std::vector<std::shared_ptr<Slot>> slots;
+    for (const std::string& path : paths) {
+        auto it = d.slot_by_path.find(path);
+        if (it == d.slot_by_path.end()) {
+            auto slot = std::make_shared<Slot>();
+            slot->path = path;
+            slot->name = std::filesystem::path(path).parent_path().filename().string();
+            slot->estimate = EstimateBytes(path);
+            it = d.slot_by_path.emplace(path, std::move(slot)).first;
+        } else if (it->second->state == Slot::State::Failed) {
+            it->second->state = Slot::State::Idle;  // an edit may have mended it
+        }
+        slots.push_back(it->second);
+    }
+    for (auto it = d.slot_by_path.begin(); it != d.slot_by_path.end();) {  // models no mod names any more
+        if (std::find(paths.begin(), paths.end(), it->first) == paths.end()) {
+            if (it->second->loaded) d.loaded_bytes -= std::min(d.loaded_bytes, it->second->estimate);
+            it = d.slot_by_path.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    // the presentations: the view is worked out when the model is loaded (it depends on the model's bounds), magnified by the scale
     std::vector<std::shared_ptr<Presentation>> presentations;
-    std::vector<int> presentation_of_want(wants.size(), -1);
-    for (size_t wi = 0; wi < wants.size(); ++wi) {
-        const PresWant& w = wants[wi];
-        if (slot_of_path[w.model] < 0) continue;
+    for (const PresWant& w : wants) {
         auto p = std::make_shared<Presentation>();
-        p->slot = slot_of_path[w.model];
-        p->view = { w.x, w.y, w.h };
-        if (w.auto_view) Model::ViewFromBounds(slots[p->slot]->bounds, w.body, &p->view.center_x, &p->view.center_y, &p->view.height);
+        p->slot = w.model;
+        p->auto_view = w.auto_view;
+        p->body = w.body;
+        p->scale = w.scale;
+        p->base_view = { w.x, w.y, w.h };
+        p->view = p->base_view;
         p->view.height /= w.scale;  // live2d_scale: magnify around the middle of the framed part
         p->follow = w.follow;
         p->click = w.click;
@@ -336,23 +551,25 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         for (size_t i = 0; i < w.click_areas.size(); ++i) p->states[kStateAreas + i].voice_next.assign(w.click_areas[i].second.voices.size(), 0);
         p->unmirror = w.unmirror;
         p->identity = w.identity;
-        presentation_of_want[wi] = (int)presentations.size();
         presentations.push_back(std::move(p));
     }
-    std::unordered_map<std::string, int> keys;
-    for (const auto& [key, wi] : by_key)
-        if (presentation_of_want[wi] >= 0) keys[key] = presentation_of_want[wi];
-    std::lock_guard<std::mutex> lock(d.mutex);
-    d.slots = std::move(slots);  // models that went away live on until the render thread drops its copies
+    d.slots = std::move(slots);
     d.presentations = std::move(presentations);
-    d.by_key = std::move(keys);
+    d.by_key = std::move(by_key);
     d.registry_mode = registry_mode;
     ++d.generation;
     d.api = api;
     d.loaded_core = s.core_dll;
     d.loaded_signature = signature;
     d.slot_count = d.slots.size();
-    if (registry_mode) Log("live2d: %zu portrait key(s) use %zu presentation(s) of %zu model(s)", d.by_key.size(), d.presentations.size(), d.slots.size());
+    for (const auto& slot : d.slots) {
+        if (!slot->loaded && slot->state == Slot::State::Idle) {
+            slot->state = Slot::State::Queued;
+            d.queue.push_back({ slot, false });
+        }
+    }
+    d.cv.notify_all();
+    if (registry_mode) Log("live2d: %zu portrait key(s) use %zu presentation(s) of %zu model(s); loading them in the background (cache %d MB)", d.by_key.size(), d.presentations.size(), d.slots.size(), s.model_cache_mb);
 }
 
 bool Live2DPainter::Ready() const {
@@ -416,29 +633,51 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
     ComPtr<ID3D11Device> device_guard;
     device_guard.Attach(dev);
     if (dev != d.device.Get()) {
-        // a different device (the first use, or the game recreated it): everything GPU-side starts over
-        for (auto& g : d.gpu_slots) { g.gpu.reset(); g.frames.clear(); g.stepped = 0; }
+        // a different device (the first use, or the game recreated it): the GPU side starts over. Models loaded for another device lost their
+        // textures to it and must be loaded again; the ones loaded before any device was known get theirs from the loader.
+        {
+            std::lock_guard<std::mutex> lock(d.mutex);
+            for (auto& [path, slot] : d.slot_by_path) {
+                if (!slot->loaded) continue;
+                std::lock_guard<std::mutex> gpu_lock(slot->loaded->gpu_mutex);
+                if (slot->loaded->gpu_device && slot->loaded->gpu_device != dev) {
+                    d.loaded_bytes -= std::min(d.loaded_bytes, slot->estimate);
+                    slot->loaded.reset();
+                }
+            }
+            d.shared_renderer.reset();
+            d.shared_device = nullptr;
+        }
+        for (auto& g : d.gpu_slots) { g.frames.clear(); g.stepped = 0; }
         d.assignment.clear();
         d.renderer.reset();
         d.deferred.Reset();
         d.device = dev;
-        d.renderer.reset(new Renderer);
+        auto renderer = std::make_shared<Renderer>();
         std::string err;
-        if (!d.renderer->Init(dev, &err)) {
+        if (!renderer->Init(dev, &err)) {
             if (!d.reported_failure) Log("live2d: renderer: %s", err.c_str());
             d.reported_failure = true;
-            d.renderer.reset();
             d.device.Reset();
             ++d.failures;
             return PaintResult::Failed;
         }
         if (FAILED(dev->CreateDeferredContext(0, &d.deferred))) {
             Log("live2d: the game's device cannot make a deferred context");
-            d.renderer.reset();
             d.device.Reset();
             ++d.failures;
             return PaintResult::Failed;
         }
+        d.renderer = renderer;
+        {
+            std::lock_guard<std::mutex> lock(d.mutex);
+            d.shared_renderer = renderer;
+            d.shared_device = dev;
+            d.queue.push_back({ nullptr, false });  // the loader puts the models loaded so far on the new device
+            for (auto& [path, slot] : d.slot_by_path)  // and the ones dropped above are loaded again
+                if (!slot->loaded && slot->state == Slot::State::Idle) { slot->state = Slot::State::Queued; d.queue.push_back({ slot, false }); }
+        }
+        d.cv.notify_all();
     }
 
     if (!d.gpu_registry_mode) {  // fallback: handed out in turn when the portrait object is first seen
@@ -453,17 +692,47 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
     }
     Presentation& pr = *d.gpu_presentations[pres_index];
     Impl::GpuSlot& gs = d.gpu_slots[pr.slot];
-    Character& character = *gs.slot->character;
-    if (!gs.gpu) {
+    // The model is loaded in the background. Until it is, the game's own portrait stays; the first portrait that needs it asks for it.
+    std::shared_ptr<Loaded> loaded;
+    {
+        std::lock_guard<std::mutex> lock(d.mutex);
+        loaded = gs.slot->loaded;
+        if (!loaded && gs.slot->state == Slot::State::Idle) {
+            gs.slot->state = Slot::State::Queued;
+            d.queue.push_back({ gs.slot, true });
+            d.cv.notify_one();
+        }
+    }
+    if (!loaded) {
+        ++d.waiting;
+        return PaintResult::Skipped;
+    }
+    gs.slot->last_used = Ticks();
+    {
         std::string err;
-        gs.gpu = d.renderer->CreateModel(character.model(), &err);
-        if (!gs.gpu) {
+        if (!EnsureGpu(*loaded, *d.renderer, dev, &err)) {
             if (!d.reported_failure) Log("live2d: GPU resources of %s: %s", gs.slot->name.c_str(), err.c_str());
             d.reported_failure = true;
             ++d.failures;
+            std::lock_guard<std::mutex> lock(d.mutex);  // freed textures cannot be uploaded again: load the model once more
+            if (gs.slot->loaded == loaded) {
+                gs.slot->loaded.reset();
+                d.loaded_bytes -= std::min(d.loaded_bytes, gs.slot->estimate);
+            }
             return PaintResult::Failed;
         }
-        Log("live2d: GPU resources created for %s", gs.slot->name.c_str());
+    }
+    Character& character = *loaded->character;
+    if (gs.loaded_serial != loaded->serial) {  // a model loaded anew: its frames and its step counter start over
+        gs.frames.clear();
+        gs.stepped = 0;
+        gs.loaded_serial = loaded->serial;
+    }
+    if (pr.view_serial != loaded->serial) {  // the view of an automatic framing comes from the loaded model's bounds
+        pr.view = pr.base_view;
+        if (pr.auto_view) Model::ViewFromBounds(loaded->bounds, pr.body, &pr.view.center_x, &pr.view.center_y, &pr.view.height);
+        pr.view.height /= pr.scale;
+        pr.view_serial = loaded->serial;
     }
 
     // Time moves in fixed steps of 1/fps. Time since the last call piles up in `pending` and a step is taken when a whole
@@ -602,7 +871,7 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
         const uint64_t t0 = Ticks();
         View view = pr.view;
         view.flip_x = flip;
-        d.renderer->Draw(d.deferred.Get(), *gs.gpu, character.model(), f.rtv.Get(), desc.Width, desc.Height, view);
+        d.renderer->Draw(d.deferred.Get(), *loaded->gpu, character.model(), f.rtv.Get(), desc.Width, desc.Height, view);
         ComPtr<ID3D11CommandList> list;
         if (FAILED(d.deferred->FinishCommandList(FALSE, &list))) {
             ++d.failures;
@@ -624,8 +893,20 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
 void Live2DPainter::Shutdown() {
     Impl& d = *impl_;
     Voice::Get().Shutdown();
+    {  // the loader first: nothing may load while everything is taken down
+        std::lock_guard<std::mutex> lock(d.mutex);
+        d.stop = true;
+    }
+    d.cv.notify_all();
+    if (d.loader.joinable()) d.loader.join();
     d.ResetGpu();
     std::lock_guard<std::mutex> lock(d.mutex);
+    d.stop = false;
+    d.queue.clear();
+    d.shared_renderer.reset();
+    d.shared_device = nullptr;
+    d.loaded_bytes = 0;
+    d.slot_by_path.clear();
     d.slots.clear();  // models before the library that made them
     d.presentations.clear();
     d.by_key.clear();
@@ -636,13 +917,21 @@ void Live2DPainter::Shutdown() {
 }
 
 std::string Live2DPainter::Stats() const {
-    const Impl& d = *impl_;
+    Impl& d = *impl_;
     const double ms = 1000.0 / TickFrequency();
-    char buf[400];
+    {
+        std::lock_guard<std::mutex> lock(d.mutex);
+        d.loaded_now = 0;
+        for (const auto& [path, slot] : d.slot_by_path)
+            if (slot->loaded) ++d.loaded_now;
+        d.loaded_mb = d.loaded_bytes >> 20;
+    }
+    char buf[520];
     const double ticks = (double)d.ticks.load(), draws = (double)d.draws.load(), copies = (double)d.copies.load();
     snprintf(buf, sizeof buf,
-             "live2d: %llu models, %llu portraits assigned, %llu not registered; advanced %llu (avg %.3f ms), drawn %llu (avg %.3f ms on the render thread), copied %llu (avg %.3f ms), failures %llu",
-             (unsigned long long)d.slot_count.load(), (unsigned long long)d.assigned.load(), (unsigned long long)d.skipped.load(), (unsigned long long)d.ticks.load(),
+             "live2d: %llu models (%llu in memory, %llu MB, %llu loads, %llu dropped), %llu portraits assigned, %llu not registered, %llu waiting for a model; advanced %llu (avg %.3f ms), drawn %llu (avg %.3f ms on the render thread), copied %llu (avg %.3f ms), failures %llu",
+             (unsigned long long)d.slot_count.load(), (unsigned long long)d.loaded_now.load(), (unsigned long long)d.loaded_mb.load(), (unsigned long long)d.loads.load(),
+             (unsigned long long)d.evictions.load(), (unsigned long long)d.assigned.load(), (unsigned long long)d.skipped.load(), (unsigned long long)d.waiting.load(), (unsigned long long)d.ticks.load(),
              ticks ? d.tick_ticks.load() * ms / ticks : 0.0, (unsigned long long)d.draws.load(), draws ? d.draw_ticks.load() * ms / draws : 0.0,
              (unsigned long long)d.copies.load(), copies ? d.copy_ticks.load() * ms / copies : 0.0, (unsigned long long)d.failures.load());
     return buf;

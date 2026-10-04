@@ -67,6 +67,15 @@ portraits = {
 | `live2d_unmirror` | the GUI mirrors some portraits (the council does for some slots), which reverses text and logos in a model. With this on (the default) the plugin draws the picture flipped in those portraits, so the GUI's mirror turns it back; the mouse follow accounts for it |
 | `live2d_actions.mouse_follow` | the model looks towards the mouse pointer (`strength` 0..1): head turn (`ParamAngleX/Y/Z`), a little body lean (`ParamBodyAngleX`) and the eyes (`ParamEyeBallX/Y`), the values Cubism's own samples drive for a drag, eased over about 0.15 s and added on top of the motion every frame. Back to the middle while the game is not the foreground window. The ini key `interactions=0` turns all interactions and events off |
 
+### Loading
+
+Models are loaded on a background thread, never on the game's render thread, and their textures go to the GPU there too (the pixel
+data is freed afterwards). The memory the loaded models may take is the ini key `model_cache_mb` (default 512): within it every model
+a mod names is loaded in advance, so a portrait finds its model ready; beyond it a model is loaded when a portrait first needs it,
+and the game's own portrait shows until it is ready (a short pop-in the first time, then none), pushing out the model unused for
+longest (never one used in the last three seconds, so a limit that is too small for what is on screen is exceeded rather than
+flickering). Editing a mod's script reloads no model: only the settings of the portrait keys are rebuilt.
+
 ### Events
 
 `live2d_actions` maps events to what happens. The motion groups, expressions and hit areas are **the model's own**, named in its

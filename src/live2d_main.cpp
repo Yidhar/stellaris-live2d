@@ -57,6 +57,9 @@ void WriteDefaultIni(const std::string& path) {
               "; the interactions mods declare (mouse follow, ...); 0 = the models only play their own motions\n"
               "interactions=1\n"
               "; voice lines: a motion started by a click says its line (model3.json `Sound`, or the mod's `sounds`); master volume 0..1\n"
+              "; memory the loaded models may take, in MB (0 = no limit). Models are loaded in the background; within this limit all of them in\n"
+              "; advance, beyond it when a portrait first needs one (the game's own portrait shows until it is ready), dropping the one unused longest\n"
+              "model_cache_mb=512\n"
               "audio=1\n"
               "volume=0.8\n", f);
         fclose(f);
@@ -127,6 +130,7 @@ l2d::Settings ReadIni(const std::string& path) {
     }
     s.interactions = GetPrivateProfileIntA("live2d", "interactions", 1, path.c_str()) != 0;
     s.audio = GetPrivateProfileIntA("live2d", "audio", 1, path.c_str()) != 0;
+    s.model_cache_mb = GetPrivateProfileIntA("live2d", "model_cache_mb", 512, path.c_str());
     s.volume = IniFloat("volume", 0.8f, path);
     s.fps = GetPrivateProfileIntA("live2d", "fps", 30, path.c_str());
     s.physics = GetPrivateProfileIntA("live2d", "physics", 1, path.c_str()) != 0;
