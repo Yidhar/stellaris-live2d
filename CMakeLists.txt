@@ -50,8 +50,13 @@ add_library(stellaris_live2d SHARED
     src/portrait_live2d.cpp
     src/portrait_registry.cpp
     src/portrait_input.cpp
+    src/voice.cpp
     src/pdx_script.cpp
 )
 target_include_directories(stellaris_live2d PRIVATE include sdk)
 target_link_libraries(stellaris_live2d PRIVATE minhook l2d_core shell32 ole32)
+# miniaudio is a large single header: warnings in it are not ours to fix
+if (MSVC)
+    set_source_files_properties(src/voice.cpp PROPERTIES COMPILE_OPTIONS "/W0")
+endif()
 set_target_properties(stellaris_live2d PROPERTIES OUTPUT_NAME "stellaris_live2d" PREFIX "")

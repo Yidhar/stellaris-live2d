@@ -34,6 +34,8 @@ struct Settings {
     };
     std::vector<ModelEntry> models;
     std::vector<std::string> extra_mod_dirs;  // mod root folders read as if they were enabled (development)
+    bool audio = true;     // play the voice lines of motions started by interactions
+    float volume = 0.8f;   // master volume of those, 0..1
     bool interactions = true;  // the mouse follow (and later click, drag, zoom) that mods declare; off = models just play
     int fps = 30;          // how often a model is advanced and redrawn
     bool physics = true;   // secondary motion from the models' physics3.json

@@ -33,6 +33,7 @@ void BuildMipChain(Image* img, std::vector<uint8_t> rgba);
 
 struct MotionRef {
     std::filesystem::path file;
+    std::filesystem::path sound;  // the voice line of the motion (the `Sound` key of model3.json), empty when it has none
     float fade_in = 1.0f, fade_out = 1.0f;
 };
 

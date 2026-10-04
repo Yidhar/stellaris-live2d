@@ -85,6 +85,10 @@ void ReadEntry(const pdx::Node& e, const fs::path& root, const std::string& file
             p.click.motion_groups = n.List("motion_groups");
             if (!n.Str("motion_group").empty()) p.click.motion_groups.push_back(n.Str("motion_group"));
             p.click.motion_index = (int)n.Num("motion_index", -1);
+            std::vector<std::string> sounds = n.List("sounds");
+            if (!n.Str("sound").empty()) sounds.push_back(n.Str("sound"));
+            for (const std::string& s : sounds) p.click.sounds.push_back((root / fs::u8path(s)).lexically_normal().string());
+            p.click.volume = (float)n.Num("volume", 1.0);
             p.click.expression = n.Str("expression");
         });
         p.drag.enabled = Action(*a, "drag", [&](const pdx::Node& n) { p.drag.strength = (float)n.Num("strength", 1.0); });

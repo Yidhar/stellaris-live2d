@@ -29,9 +29,11 @@ ASSIGN = {
 VIEWS = {"d307_s4703": "x = 0.48 y = 0.49 height = 0.17"}
 
 
-def entry(key, model):
+def entry(key, model, sounds):
     view = VIEWS.get(model)
     view = f"{{ {view} }}" if view else "{ auto = yes  body = 0.46 }"
+    lines = " ".join(f'"{s}"' for s in sounds)
+    say = f"  sounds = {{ {lines} }}" if sounds else ""
     return f"""	{key} = {{
 		live2d = yes
 		live2d_unmirror = yes
@@ -39,7 +41,7 @@ def entry(key, model):
 		live2d_view = {view}
 		live2d_actions = {{
 			mouse_follow = {{ enabled = yes  strength = 0.6 }}
-			click = {{ enabled = yes  motion_group = "touch*" }}
+			click = {{ enabled = yes  motion_group = "touch*"{say} }}
 			drag = {{ enabled = no }}
 			scale = {{ enabled = yes  min = 0.8  max = 1.6 }}
 		}}
@@ -52,12 +54,21 @@ def main():
     ap.add_argument("--out", default=os.path.join(DOCS, "mod", MOD_NAME))
     ap.add_argument("--models", default=os.path.join(ROOT, "models_dxt5"))
     ap.add_argument("--enable", action="store_true")
+    ap.add_argument("--voices", default=os.path.join(ROOT, "scratch", "voice"),
+                    help="folder of WAV/MP3/FLAC/OGG lines every portrait says when clicked (see make_test_voices.ps1); none if missing")
     a = ap.parse_args()
 
     if os.path.isdir(a.out):
         shutil.rmtree(a.out)
     for model in sorted(set(ASSIGN.values())):
         shutil.copytree(os.path.join(a.models, model), os.path.join(a.out, "gfx", "live2d", model))
+    sounds = []
+    if os.path.isdir(a.voices):
+        for name in sorted(os.listdir(a.voices)):
+            if os.path.splitext(name)[1].lower() in (".wav", ".mp3", ".flac", ".ogg"):
+                os.makedirs(os.path.join(a.out, "sound", "live2d_test"), exist_ok=True)
+                shutil.copyfile(os.path.join(a.voices, name), os.path.join(a.out, "sound", "live2d_test", name))
+                sounds.append(f"sound/live2d_test/{name}")
 
     keys = dict(ASSIGN)
     for key, model in ASSIGN.items():  # the legacy human portraits use the same models
@@ -67,7 +78,7 @@ def main():
     with open(os.path.join(side, "00_live2d_humans.txt"), "w", encoding="utf-8", newline="\n") as f:
         f.write("# Live2D replacements for the human portraits. Read by stellaris_live2d.dll, not by the game.\n"
                 "# The keys are the ones of the `portraits = { }` entries in gfx/portraits/portraits/07_portraits_human.txt.\n\n"
-                "portraits = {\n" + "".join(entry(k, m) for k, m in keys.items()) + "}\n")
+                "portraits = {\n" + "".join(entry(k, m, sounds) for k, m in keys.items()) + "}\n")
 
     descriptor = ('version="0.1.0"\ntags={\n\t"Graphics"\n\t"Species"\n}\nname="Live2D Human Portraits (test)"\n'
                   'supported_version="v4.5.*"\n')

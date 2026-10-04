@@ -13,6 +13,7 @@
 //     live2d_actions = {
 //         mouse_follow = { enabled = yes  strength = 0.6 }
 //         click        = { enabled = yes  motion_group = "touch*"  motion_index = -1 }   // or motion_groups = { a b c }
+//                         add  sounds = { "sound/a.wav" "sound/b.ogg" }  volume = 1.0   to say a line instead of the motion's Sound
 //         drag         = { enabled = yes  strength = 1.0 }
 //         scale        = { enabled = yes  min = 0.8  max = 1.6 }
 //     }
@@ -31,6 +32,9 @@ struct ClickAction {
     // group that starts with the rest ("touch*": touch_1, touch_2, ...). The Idle group is never chosen by a pattern.
     std::vector<std::string> motion_groups;
     int motion_index = -1;      // -1: a random motion of the chosen group
+    // voice lines (absolute paths) to pick from at random instead of the motion's own `Sound`; `sound = "file"` or `sounds = { a b }`
+    std::vector<std::string> sounds;
+    float volume = 1.0f;        // of those lines and of the motion's, relative to the master volume
     std::string expression;     // read, not implemented yet
 };
 struct DragAction { bool enabled = false; float strength = 1.0f; };

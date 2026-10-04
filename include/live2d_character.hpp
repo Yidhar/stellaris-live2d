@@ -30,6 +30,8 @@ public:
     // the Idle group only by its exact name). Avoids the group played last when there is another. False when none matches.
     bool PlayMotionFrom(const std::vector<std::string>& patterns, int index = -1);
     const std::string& last_motion_group() const { return last_group_; }
+    // the voice line of the motion most recently started by PlayMotion (empty: none)
+    const std::filesystem::path& last_motion_sound() const { return last_sound_; }
 
     // Where the model should look, each axis in -1..1 (x to the model's right, y up) and how much of the usual head turn,
     // eye movement and body lean that is (0 = not at all). The look eases towards the target over a fraction of a second;
@@ -40,7 +42,7 @@ public:
     void Tick(float dt);
 
 private:
-    std::shared_ptr<Motion> GetMotion(const std::string& group, int index);
+    std::shared_ptr<Motion> GetMotion(const std::string& group, int* index);
 
     Model model_;
     MotionPlayer player_;
@@ -53,6 +55,7 @@ private:
     float look_target_x_ = 0.0f, look_target_y_ = 0.0f, look_weight_ = 0.0f, look_x_ = 0.0f, look_y_ = 0.0f;
     float now_ = 0.0f;
     std::string last_group_;
+    std::filesystem::path last_sound_;
     std::mt19937 rng_{ std::random_device{}() };
 };
 

@@ -3,6 +3,7 @@
 #include "live2d_character.hpp"
 #include "live2d_renderer.hpp"
 #include "portrait_input.hpp"
+#include "voice.hpp"
 
 #include <windows.h>
 #include <algorithm>
@@ -58,10 +59,12 @@ struct Live2DPainter::Impl {
     int fps = 30;
     bool physics = true;
     bool interactions = true;
+    bool audio = true;
     std::string loaded_core;
     std::string loaded_signature;                // what the slots were made from, to see when that changes
     std::unordered_map<std::string, int> by_key; // portrait key -> slot, when the mods register portraits
     bool registry_mode = false;
+    bool voice_failed = false;  // worker thread: opening the playback device failed, do not retry every two seconds
 
     // --- render thread only
     struct GpuSlot {
@@ -111,6 +114,15 @@ Live2DPainter& Painter() {
 void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
     Impl& d = *impl_;
 
+    // the voice device: open while Live2D and audio are both on (opening takes a moment, so it is done here, not on the render thread)
+    if (s.live2d && s.audio) {
+        if (!d.voice_failed && !Voice::Get().Start(s.volume)) d.voice_failed = true;
+        else if (!d.voice_failed) Voice::Get().SetVolume(s.volume);
+    } else {
+        d.voice_failed = false;
+        Voice::Get().Shutdown();
+    }
+
     // what to load: the models the mods register (several portrait keys can share one), or else the ini's list
     struct Want {
         std::string path;
@@ -128,6 +140,9 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         char id[256];
         std::string groups;
         for (const std::string& g : e.click.motion_groups) groups += g + ",";
+        groups += "|";
+        for (const std::string& g : e.click.sounds) groups += g + ",";
+        groups += std::to_string(e.click.volume);
         snprintf(id, sizeof id, "m%d f%.2f c%d:%d u%d d%d s%d ", (int)e.mouse_follow.enabled, e.mouse_follow.strength, (int)e.click.enabled,
                  e.click.motion_index, (int)e.unmirror, (int)e.drag.enabled, (int)e.scale.enabled);
         Want w{ e.model, e.auto_view, e.auto_body, e.view_x, e.view_y, e.view_h, id + groups, e.mouse_follow, e.click, e.unmirror };
@@ -173,6 +188,7 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         std::lock_guard<std::mutex> lock(d.mutex);
         d.fps = s.fps < 1 ? 1 : s.fps > 120 ? 120 : s.fps;
         d.interactions = s.interactions;
+        d.audio = s.audio;
         if (d.physics != s.physics) {
             d.physics = s.physics;
             for (auto& slot : d.slots) slot->character->set_physics_enabled(s.physics);
@@ -246,11 +262,12 @@ bool Live2DPainter::Ready() const {
 PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Texture2D* target, const D3D11_TEXTURE2D_DESC& desc) {
     Impl& d = *impl_;
     int fps;
-    bool interactions;
+    bool interactions, audio;
     {
         std::lock_guard<std::mutex> lock(d.mutex);
         fps = d.fps;
         interactions = d.interactions;
+        audio = d.audio;
         if (d.slots.empty()) return PaintResult::Skipped;
         if (d.generation != d.gpu_generation) {
             // the set of models changed: start over with the new ones (GPU resources are made when a model is first used)
@@ -359,8 +376,17 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
 
     // a click on this portrait starts one of its touch motions
     if (interactions && gs.slot->click.enabled && ConsumeClick(portrait)) {
-        const bool ok = character.PlayMotionFrom(gs.slot->click.motion_groups, gs.slot->click.motion_index);
-        Log("live2d: click on portrait %s (%s) -> %s", key, gs.slot->name.c_str(), ok ? character.last_motion_group().c_str() : "no matching motion");
+        const ClickAction& click = gs.slot->click;
+        const bool ok = character.PlayMotionFrom(click.motion_groups, click.motion_index);
+        // the line to say: one of the mod's `sounds`, else the Sound of the motion that started
+        std::filesystem::path line;
+        static uint32_t next_line = 0;  // the mod's lines in turn, so one is not repeated at once
+        if (!click.sounds.empty()) line = click.sounds[next_line++ % click.sounds.size()];
+        else if (ok) line = character.last_motion_sound();
+        bool said = false;
+        if (audio && !line.empty()) said = Voice::Get().Play(gs.slot.get(), line, click.volume);
+        Log("live2d: click on portrait %s (%s) -> %s%s%s", key, gs.slot->name.c_str(), ok ? character.last_motion_group().c_str() : "no matching motion",
+            line.empty() ? "" : (said ? ", saying " : ", could not play "), line.empty() ? "" : line.filename().string().c_str());
     }
 
     if (gs.stepped != d.serial) {
@@ -427,6 +453,7 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
 
 void Live2DPainter::Shutdown() {
     Impl& d = *impl_;
+    Voice::Get().Shutdown();
     d.ResetGpu();
     std::lock_guard<std::mutex> lock(d.mutex);
     d.slots.clear();  // models before the library that made them

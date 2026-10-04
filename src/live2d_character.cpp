@@ -47,10 +47,12 @@ void Character::SetLookTarget(float x, float y, float weight) {
     look_weight_ = std::clamp(weight, 0.0f, 1.0f);
 }
 
-std::shared_ptr<Motion> Character::GetMotion(const std::string& group, int index) {
+std::shared_ptr<Motion> Character::GetMotion(const std::string& group, int* index_out) {
     auto g = model_.motions.find(group);
     if (g == model_.motions.end() || g->second.empty()) return nullptr;
+    int index = *index_out;
     if (index < 0 || index >= (int)g->second.size()) index = (int)(rng_() % g->second.size());
+    *index_out = index;
     auto key = std::make_pair(group, index);
     auto it = motions_.find(key);
     if (it != motions_.end()) return it->second;
@@ -65,9 +67,10 @@ std::shared_ptr<Motion> Character::GetMotion(const std::string& group, int index
 }
 
 bool Character::PlayMotion(const std::string& group, int index) {
-    auto motion = GetMotion(group, index);
+    auto motion = GetMotion(group, &index);
     if (!motion) return false;
     player_.Start(motion, now_, group == "Idle" ? 1 : 0);
+    last_sound_ = model_.motions[group][index].sound;
     return true;
 }
 

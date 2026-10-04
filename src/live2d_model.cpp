@@ -122,6 +122,8 @@ bool Model::Load(const core::Api* api, const fs::path& model3_json, std::string*
             for (const auto& m : it.value()) {
                 MotionRef r;
                 r.file = directory / fs::u8path(m.value("File", std::string()));
+                const std::string sound = m.value("Sound", std::string());
+                if (!sound.empty()) r.sound = directory / fs::u8path(sound);
                 r.fade_in = m.value("FadeInTime", 1.0f);
                 r.fade_out = m.value("FadeOutTime", 1.0f);
                 motions[it.key()].push_back(std::move(r));

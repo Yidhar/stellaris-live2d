@@ -55,7 +55,10 @@ void WriteDefaultIni(const std::string& path) {
               "; mod root folders read as if they were enabled (development): the portrait registrations in them are used\n"
               "extra_mod_dirs=\n"
               "; the interactions mods declare (mouse follow, ...); 0 = the models only play their own motions\n"
-              "interactions=1\n", f);
+              "interactions=1\n"
+              "; voice lines: a motion started by a click says its line (model3.json `Sound`, or the mod's `sounds`); master volume 0..1\n"
+              "audio=1\n"
+              "volume=0.8\n", f);
         fclose(f);
     }
 }
@@ -123,6 +126,8 @@ l2d::Settings ReadIni(const std::string& path) {
         if (!item.empty()) s.extra_mod_dirs.push_back(item);
     }
     s.interactions = GetPrivateProfileIntA("live2d", "interactions", 1, path.c_str()) != 0;
+    s.audio = GetPrivateProfileIntA("live2d", "audio", 1, path.c_str()) != 0;
+    s.volume = IniFloat("volume", 0.8f, path);
     s.fps = GetPrivateProfileIntA("live2d", "fps", 30, path.c_str());
     s.physics = GetPrivateProfileIntA("live2d", "physics", 1, path.c_str()) != 0;
     s.test_pattern = GetPrivateProfileIntA("live2d", "test_pattern", 0, path.c_str()) != 0;
