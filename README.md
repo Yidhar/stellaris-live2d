@@ -83,7 +83,8 @@ plugin reads them from the enabled mods' `gfx/portraits/live2d/*.txt` (a folder 
 plugin keeps drawing the normal portraits. See [docs/portrait-mod-design.md](docs/portrait-mod-design.md).
 `python scripts\make_human_mod.py --enable` builds a test mod that replaces the human portraits with the models in
 `models_dxt5\`; `python scripts\load_save.py <save> --folder <folder>` restarts the game on a save and injects the plugin.
-`mouse_follow` works (head and eyes follow the pointer; `interactions=0` in the ini turns it off); `click`, `drag` and
+`mouse_follow` works (head and eyes follow the pointer, seen from the portrait's own place on the screen, mirrored portraits
+included; `interactions=0` in the ini turns it off); `click`, `drag` and
 `scale` are parsed but not implemented yet.
 
 ### The offscreen viewer

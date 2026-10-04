@@ -23,7 +23,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pe_image import Image  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# Layout of the engine's 2D GUI object that a CPortraitObject is (CPortraitObject : CSprite : C2dObject : CGraphicalObject) and
+# of the CGuiGraphics the engine passes to UpdatePortrait. Read from the disassembly of the constructors, of
+# CGuiGraphics::Render2dTree (it stores the absolute position at +0x68 and reads the pointer from the graphics object) and of
+# CPortraitObject::Render (see docs/engine-notes.md); verified for this build only. The plugin checks every value it reads
+# for plausibility and falls back to the middle of the window when a value is nonsense.
+LAYOUT_VERIFIED_FOR = 0x6AB5181D
 LITERAL = r"C:\mnt\gsg\stellaris\augustus\augustus\source\graphics\portraitobject.cpp:467"
+RENDER_STRING = "Invalid alternate sprite configuration index [%i], must be in range [%i, %i)"
 
 
 def fail(msg):
@@ -95,6 +103,19 @@ def main():
     if dirty is None:
         fail("could not find the portrait's `needs render` flag")
 
+    # CPortraitObject::Render(this, CGuiGraphics*, ctx, matrix, alpha, state, texture): the GUI draw of the portrait, the only
+    # function that mentions the alternate-sprite-configuration range error. It sets the same "needs render" flag.
+    rs = im.find_string(RENDER_STRING)
+    if rs is None:
+        fail("the alternate sprite configuration string is not in this executable")
+    rfuncs = im.functions_referencing(rs)
+    if len(rfuncs) != 1:
+        fail(f"expected exactly one function referencing the alternate sprite configuration string, found {[hex(f) for f in rfuncs]}")
+    render = rfuncs[0]
+    rins = im.disasm_fn(render, 0x1000)
+    if not any(x.mnemonic == "mov" and x.op_str.startswith("byte ptr [") and x.op_str.endswith(", 1") and mem_disp(x.op_str) == dirty for x in rins):
+        fail(f"{render:#x} does not set the needs-render flag at +{dirty:#x}")
+
     # The portrait key: the two sites that look it up in the database table agree on (KEY, TABLE) and the same Find function
     sites = set()
     for k in range(4, len(ins)):
@@ -140,6 +161,9 @@ def main():
     if data is None or count != data + 0xC:
         fail(f"could not read the portrait array in {ctrl:#x}: data {data} count {count}")
 
+    if im.timestamp != LAYOUT_VERIFIED_FOR:
+        print(f"WARNING: the GUI object layout constants were verified for exe {LAYOUT_VERIFIED_FOR:#010x}, this is {im.timestamp:#010x}; "
+              "re-check them against docs/engine-notes.md", file=sys.stderr)
     print(f"exe timestamp {im.timestamp:#010x}")
     print(f"CPortraitObject::UpdatePortrait   rva {fn:#x}  ({len(ins)} instructions, this in {this_reg})")
     print(f"CPortraitObject width             +{width:#x} (uint16)")
@@ -147,6 +171,7 @@ def main():
     print(f"CPortraitObject render target     +{rt:#x} (TextureGFX*)")
     print(f"CPortraitObject needs-render flag +{dirty:#x} (uint8)")
     print(f"CPortraitObject key (CString)     +{key:#x}  (database table at +{table:#x})")
+    print(f"CPortraitObject::Render           rva {render:#x}")
     print(f"UpdatePortraits (controller)      rva {ctrl:#x}")
     print(f"portrait array                    data pointer rva {data:#x}, count rva {count:#x}")
 
@@ -164,6 +189,9 @@ inline constexpr uint32_t kExeTimestamp = {im.timestamp:#010x};  // PE TimeDateS
 namespace fn {{
     // void (*)(void* portrait, void* graphics, void* context): renders one visible portrait into its render target
     inline constexpr uintptr_t CPortraitObject_UpdatePortrait = {fn:#x};
+    // void (*)(void* self, void* guiGraphics, void* ctx, const float* matrix16, float alpha, uint16_t state, void* texture): the GUI
+    // draws the portrait's render target; the matrix holds the absolute position, guiGraphics is the engine's CGuiGraphics
+    inline constexpr uintptr_t CPortraitObject_Render = {render:#x};
 }}  // namespace fn
 
 namespace glob {{
@@ -179,7 +207,22 @@ namespace rt {{
     inline constexpr std::ptrdiff_t CPortraitObject_render_target = {rt:#x};  // TextureGFX*, null until first rendered
     // engine CString: the key of the `portraits = {{}}` entry this object shows (empty or "debug" until a setter ran)
     inline constexpr std::ptrdiff_t CPortraitObject_key = {key:#x};
+    // the object is a GUI sprite and keeps where the GUI drew it last frame (GUI units, not pixels)
+    // float x, y: the lower-left corner, in GUI units around the middle of the screen with y up (checked against screenshots)
+    inline constexpr std::ptrdiff_t CPortraitObject_pos = 0x68;
+    inline constexpr std::ptrdiff_t CPortraitObject_scale = 0xC4;      // float
+    inline constexpr std::ptrdiff_t CPortraitObject_mirrored = 0xC8;   // uint8_t, 1 = drawn flipped left to right
+    // the CGuiGraphics passed to UpdatePortrait: the mouse pointer in the same GUI units
+    inline constexpr std::ptrdiff_t CGuiGraphics_mouse_x = 0x350;      // float
+    inline constexpr std::ptrdiff_t CGuiGraphics_mouse_y = 0x354;      // float
+    inline constexpr std::ptrdiff_t CGuiGraphics_width = 0x28;         // int, size of the GUI in GUI units
+    inline constexpr std::ptrdiff_t CGuiGraphics_height = 0x2C;        // int
 }}  // namespace rt
+
+namespace vt {{
+    // virtual void GetSize(this, int out[2]): the width and height the GUI draws the object at (sprite size times scale)
+    inline constexpr int C2dObject_GetSize = 54;
+}}  // namespace vt
 
 // Layout of the engine's CString, read from the constructor of CPortraitObject (it initialises the key at +{key:#x} to "debug"):
 // 0x30 bytes, characters inline in the first 16 bytes after +0x10 while the capacity (+0x28) is below 16, else a pointer there.

@@ -4,6 +4,8 @@ A mod carries the art; the plugin (`stellaris_live2d.dll`) only supplies the run
 Live2D (or, later, Spine) and how they react, in the same script syntax the game uses to register portraits. Without the
 plugin the mod does nothing and the game draws the portraits it always drew.
 
+See also [engine-notes.md](engine-notes.md) for the engine facts the plugin relies on.
+
 ## What the engine tells us (Stellaris 4.5.1, found by static analysis, checked in the game)
 
 - A `portraits = { <key> = { entity, clothes_selector, attachment_selector, character_textures, ... } }` entry in
@@ -64,10 +66,10 @@ portraits = {
 
 **Status:** the registration, model loading and drawing work (checked in the game with a mod that replaces the human
 portraits). `mouse_follow` works (checked in the game: the head and eyes of the large leader portrait follow the pointer to the
-four screen edges); until the screen rectangle of each portrait is known the target is the pointer's place relative to the
-middle of the game window, not relative to the portrait. `click`, `drag` and `scale` are parsed and kept but not implemented:
-they need the screen rectangle of each portrait, which the engine does not keep on the portrait object (the GUI sprite that
-shows the render target knows it), plus mouse input.
+four screen edges, and in the council with the pointer around the four portraits, where the mirrored ones turn the right way).
+The look target is the pointer relative to the portrait's own place on the screen. `click`, `drag` and `scale` are parsed and kept
+but not implemented; the screen rectangle each of them needs is known now (see engine-notes.md), what is missing is the mouse button
+and wheel input and a decision about the portrait list that scrolls.
 
 ## Making a mod
 
@@ -84,5 +86,6 @@ shows the render target knows it), plus mouse input.
 - Spine: nothing draws yet.
 - Binding on more than the key: per leader, per species, per screen (the object's scope and sprite type are available).
 - Interactions (above) and a way for events or scripts to trigger a motion or expression.
-- Council slots are narrow and the engine may mirror a portrait depending on the slot, so text or logos in a model can appear
-  reversed there; a per-portrait flip option is a candidate.
+- The council mirrors some slots (the engine's mirror flag, `+0xC8`), so text or logos in a model appear reversed there. The look
+  target already accounts for it; a way to un-mirror the picture (draw it flipped in the render target) is a candidate option.
+- Two portraits that share a model share its frame and its look target (the first one asked decides).

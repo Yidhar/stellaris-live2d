@@ -10,6 +10,9 @@ inline constexpr uint32_t kExeTimestamp = 0x6ab5181d;  // PE TimeDateStamp this 
 namespace fn {
     // void (*)(void* portrait, void* graphics, void* context): renders one visible portrait into its render target
     inline constexpr uintptr_t CPortraitObject_UpdatePortrait = 0xfb1280;
+    // void (*)(void* self, void* guiGraphics, void* ctx, const float* matrix16, float alpha, uint16_t state, void* texture): the GUI
+    // draws the portrait's render target; the matrix holds the absolute position, guiGraphics is the engine's CGuiGraphics
+    inline constexpr uintptr_t CPortraitObject_Render = 0xfad5b0;
 }  // namespace fn
 
 namespace glob {
@@ -25,7 +28,22 @@ namespace rt {
     inline constexpr std::ptrdiff_t CPortraitObject_render_target = 0x530;  // TextureGFX*, null until first rendered
     // engine CString: the key of the `portraits = {}` entry this object shows (empty or "debug" until a setter ran)
     inline constexpr std::ptrdiff_t CPortraitObject_key = 0x818;
+    // the object is a GUI sprite and keeps where the GUI drew it last frame (GUI units, not pixels)
+    // float x, y: the lower-left corner, in GUI units around the middle of the screen with y up (checked against screenshots)
+    inline constexpr std::ptrdiff_t CPortraitObject_pos = 0x68;
+    inline constexpr std::ptrdiff_t CPortraitObject_scale = 0xC4;      // float
+    inline constexpr std::ptrdiff_t CPortraitObject_mirrored = 0xC8;   // uint8_t, 1 = drawn flipped left to right
+    // the CGuiGraphics passed to UpdatePortrait: the mouse pointer in the same GUI units
+    inline constexpr std::ptrdiff_t CGuiGraphics_mouse_x = 0x350;      // float
+    inline constexpr std::ptrdiff_t CGuiGraphics_mouse_y = 0x354;      // float
+    inline constexpr std::ptrdiff_t CGuiGraphics_width = 0x28;         // int, size of the GUI in GUI units
+    inline constexpr std::ptrdiff_t CGuiGraphics_height = 0x2C;        // int
 }  // namespace rt
+
+namespace vt {
+    // virtual void GetSize(this, int out[2]): the width and height the GUI draws the object at (sprite size times scale)
+    inline constexpr int C2dObject_GetSize = 54;
+}  // namespace vt
 
 // Layout of the engine's CString, read from the constructor of CPortraitObject (it initialises the key at +0x818 to "debug"):
 // 0x30 bytes, characters inline in the first 16 bytes after +0x10 while the capacity (+0x28) is below 16, else a pointer there.

@@ -346,20 +346,7 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, ID3D11Te
         // portrait's place on the screen is not known); back to the middle while the game is not the foreground window
         float lx = 0.0f, ly = 0.0f;
         const bool follow = interactions && gs.slot->follow.enabled;
-        if (follow) {
-            float mx, my, ww, wh;
-            if (MouseInGameWindow(&mx, &my, &ww, &wh)) {
-                ScreenRect r;
-                if (PortraitScreenRect(portrait, &r)) {
-                    lx = (mx - (r.x + r.w * 0.5f)) / (0.4f * ww);
-                    ly = ((r.y + r.h * 0.5f) - my) / (0.4f * wh);
-                    if (r.mirrored) lx = -lx;
-                } else {
-                    lx = (mx - ww * 0.5f) / (ww * 0.5f);
-                    ly = (wh * 0.5f - my) / (wh * 0.5f);
-                }
-            }
-        }
+        if (follow) ComputeLookTarget(portrait, &lx, &ly);
         character.SetLookTarget(lx, ly, follow ? gs.slot->follow.strength : 0.0f);
         const uint64_t t0 = Ticks();
         character.Tick((float)step);

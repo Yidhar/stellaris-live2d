@@ -8,16 +8,19 @@
 // that matched is remembered and re-validated on every use.
 #include "live2d.hpp"
 #include "portrait_live2d.hpp"
+#include "portrait_input.hpp"
 #include "stellaris_sdk.hpp"
 #include "MinHook.h"
 
 #include <windows.h>
 #include <d3d11.h>
 #include <atomic>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <unordered_map>
 #include <vector>
 
 namespace l2d {
@@ -53,10 +56,12 @@ void Log(const char* fmt, ...) {
 namespace {
 
 using FnUpdatePortrait = void (*)(void* portrait, void* graphics, void* context);
+using FnRender = void (*)(void* self, void* gui, void* context, const float* matrix, float alpha, uint16_t state, void* texture);
 
 uintptr_t g_base = 0;
 bool g_installed = false;
 FnUpdatePortrait g_orig_update = nullptr;
+FnRender g_orig_render = nullptr;
 std::atomic<int> g_in_hook{ 0 };  // detours currently running, drained on unload
 
 // what the hook paints after the engine rendered a portrait: 0 nothing, 1 the test pattern, 2 the Live2D model
@@ -76,6 +81,12 @@ uint64_t Ticks() {
     QueryPerformanceCounter(&t);
     return (uint64_t)t.QuadPart;
 }
+
+const uint64_t g_ticks_per_second = [] {
+    LARGE_INTEGER f;
+    QueryPerformanceFrequency(&f);
+    return (uint64_t)f.QuadPart;
+}();
 
 // offset inside a TextureGFX at which the ID3D11Texture2D pointer sits; -1 until discovered
 std::atomic<int> g_tex_off{ -1 };
@@ -180,6 +191,71 @@ void ReadPortraitKey(const uint8_t* portrait, char* out, size_t cap) {
     }
 }
 
+// Where the GUI draws portraits. The engine's GUI draw (CPortraitObject::Render, once per drawn portrait per frame) is hooked:
+// the object is a GUI sprite that holds its absolute position, scale and mirror flag, and the call gets the engine's
+// CGuiGraphics, which holds the mouse pointer. The painter runs earlier in the next frame (UpdatePortrait comes before the GUI
+// draw) and uses what was recorded. Values are checked for plausibility; a failed check just leaves them out.
+struct DrawnRect {
+    ScreenRect rect;
+    uint64_t ticks = 0;
+};
+std::unordered_map<const void*, DrawnRect> g_drawn;  // render thread only
+std::atomic<void*> g_gui_graphics{ nullptr };
+
+// The GUI keeps its coordinates around the middle of the screen with y up, and a sprite's position is its lower-left corner: the
+// result is turned into units from the top-left corner, y down, which is where the pointer is measured from.
+bool ReadDrawnRect(void* portrait, void* gui, ScreenRect* out) {
+    __try {
+        const auto* g = (const uint8_t*)gui;
+        const int gui_w = *(const int*)(g + sdk::rt::CGuiGraphics_width), gui_h = *(const int*)(g + sdk::rt::CGuiGraphics_height);
+        if (gui_w < 320 || gui_w > 16384 || gui_h < 240 || gui_h > 16384) return false;
+        const auto* o = (const uint8_t*)portrait;
+        const float x = *(const float*)(o + sdk::rt::CPortraitObject_pos), y = *(const float*)(o + sdk::rt::CPortraitObject_pos + 4);
+        const float scale = *(const float*)(o + sdk::rt::CPortraitObject_scale);
+        int size[4] = { 0, 0, 0, 0 };
+        void** vtable = *(void***)portrait;
+        ((void (*)(void*, int*))vtable[sdk::vt::C2dObject_GetSize])(portrait, size);
+        const bool sane = std::isfinite(x) && std::isfinite(y) && std::fabs(x) < 30000.0f && std::fabs(y) < 30000.0f &&
+                          std::isfinite(scale) && scale > 0.0f && scale < 50.0f && size[0] >= 4 && size[0] <= 8192 && size[1] >= 4 &&
+                          size[1] <= 8192;
+        if (!sane) return false;
+        out->w = (float)size[0];
+        out->h = (float)size[1];
+        out->x = (float)gui_w * 0.5f + (float)(int)x;
+        out->y = (float)gui_h * 0.5f - (float)(int)y - out->h;
+        out->mirrored = o[sdk::rt::CPortraitObject_mirrored] != 0;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool ReadGuiMouse(void* gui, float* x, float* y, float* w, float* h) {
+    __try {
+        const auto* g = (const uint8_t*)gui;
+        *x = *(const float*)(g + sdk::rt::CGuiGraphics_mouse_x);
+        *y = *(const float*)(g + sdk::rt::CGuiGraphics_mouse_y);
+        *w = (float)*(const int*)(g + sdk::rt::CGuiGraphics_width);
+        *h = (float)*(const int*)(g + sdk::rt::CGuiGraphics_height);
+        return std::isfinite(*x) && std::isfinite(*y) && std::fabs(*x) < 30000.0f && std::fabs(*y) < 30000.0f && *w >= 320.0f &&
+               *w <= 16384.0f && *h >= 240.0f && *h <= 16384.0f;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// what the painter gets for one portrait: the rectangle from the last GUI draw if that is recent, and the pointer
+void BuildPortraitFrame(void* portrait, PortraitFrame* out) {
+    *out = PortraitFrame{};
+    out->portrait = portrait;
+    const auto it = g_drawn.find(portrait);
+    if (it != g_drawn.end() && Ticks() - it->second.ticks < g_ticks_per_second / 4) {
+        out->has_rect = true;
+        out->rect = it->second.rect;
+    }
+    if (void* gui = g_gui_graphics.load()) out->has_mouse = ReadGuiMouse(gui, &out->mouse_x, &out->mouse_y, &out->gui_w, &out->gui_h);
+}
+
 // One portrait: after the engine rendered it, overwrite its render target.
 void PaintPortrait(void* portrait) {
     const auto* base = (const uint8_t*)portrait;
@@ -273,15 +349,51 @@ void StopPainting() {
     }
 }
 
+// the first few portraits' rectangles go to the log so they can be compared with a screenshot
+void LogFrameOnce(void* portrait, const PortraitFrame& f) {
+    static int logged = 0;
+    if (logged >= 12 || !f.has_rect) return;
+    char key[96];
+    ReadPortraitKey((const uint8_t*)portrait, key, sizeof key);
+    static char seen[12][96];
+    for (int i = 0; i < logged; ++i)
+        if (!strcmp(seen[i], key)) return;
+    strcpy_s(seen[logged++], key);
+    Log("portrait %s: GUI rect x %.0f y %.0f size %.0fx%.0f mirrored %d, pointer %s(%.1f, %.1f)", key, f.rect.x, f.rect.y, f.rect.w, f.rect.h,
+        (int)f.rect.mirrored, f.has_mouse ? "" : "unknown ", f.mouse_x, f.mouse_y);
+}
+
 void UpdatePortraitDetour(void* portrait, void* graphics, void* context) {
     g_in_hook.fetch_add(1);
     // the engine re-renders a portrait only while this flag is set (it clears it itself)
-    if (((const uint8_t*)portrait)[sdk::rt::CPortraitObject_needs_render]) ++g_engine_renders;
+    const bool drawn = ((const uint8_t*)portrait)[sdk::rt::CPortraitObject_needs_render] != 0;
+    if (drawn) ++g_engine_renders;
+    if (g_mode.load() == 2) {
+        PortraitFrame frame;
+        BuildPortraitFrame(portrait, &frame);
+        SetPortraitFrame(frame);
+        LogFrameOnce(portrait, frame);
+    }
     g_orig_update(portrait, graphics, context);
     ++g_calls;
     g_painting.fetch_add(1);
     if (g_mode.load()) PaintGuarded(portrait);
     g_painting.fetch_sub(1);
+    g_in_hook.fetch_sub(1);
+}
+
+// The GUI draws a portrait: note where, then let the engine draw it.
+void RenderDetour(void* self, void* gui, void* context, const float* matrix, float alpha, uint16_t state, void* texture) {
+    g_in_hook.fetch_add(1);
+    if (g_mode.load() == 2) {
+        DrawnRect d;
+        if (ReadDrawnRect(self, gui, &d.rect)) {
+            d.ticks = Ticks();
+            g_drawn[self] = d;
+        }
+        g_gui_graphics = gui;
+    }
+    g_orig_render(self, gui, context, matrix, alpha, state, texture);
     g_in_hook.fetch_sub(1);
 }
 
@@ -314,6 +426,11 @@ bool Install(uintptr_t base) {
         return false;
     }
     Log("hooked CPortraitObject::UpdatePortrait at 0x%llX", (unsigned long long)target);
+    const uintptr_t render = base + sdk::fn::CPortraitObject_Render;
+    if (MH_CreateHook((LPVOID)render, (LPVOID)&RenderDetour, (LPVOID*)&g_orig_render) != MH_OK || MH_EnableHook((LPVOID)render) != MH_OK)
+        Log("could not hook CPortraitObject::Render at 0x%llX: portraits will not know where they are on the screen", (unsigned long long)render);
+    else
+        Log("hooked CPortraitObject::Render at 0x%llX", (unsigned long long)render);
     g_installed = true;
     return true;
 }
