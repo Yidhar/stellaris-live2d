@@ -60,7 +60,8 @@ You need a Cubism Core library and a model. Neither is included.
 2. **A model**: a folder with `model3.json`, the `moc3`, textures (PNG, JPEG, or DDS in DXT1/DXT3/DXT5, the format of the game's
    own textures: a quarter of the video memory, with the mip chain stored in the file) and optionally `physics3.json` and
    motions. `l2d_pack` converts a model's PNG textures to DXT5. Models carry their authors' licenses.
-3. Build the plugin (below) and run `python scripts\deploy.py`: it copies `stellaris_live2d.dll` and the loader `d3dx9_43.dll` next to
+3. Unpack a zip from the [Releases](https://github.com/Yidhar/stellaris-live2d/releases) page (or build the plugin, below), and run
+   `python scripts\deploy.py` from that folder: it copies `stellaris_live2d.dll` and the loader `d3dx9_43.dll` next to
    `stellaris.exe`, and from then on the game loads the plugin by itself a few seconds after it starts (`deploy.py --remove` takes
    both away; a file `stellaris_live2d.disabled` next to the exe stops the loader for a session). The loader is a stand-in for a system
    DLL that only the game's exe imports: the folder of the exe is searched first, so the game picks it up, it passes every call on to the
@@ -140,7 +141,12 @@ build\Release\l2d_bench.exe --core Live2DCubismCore.dll --size 575x380 --frames 
 `stellaris_bench.dll` from the stellaris-perf repo loaded for the frame counter) and compares frames per second with the
 plugin off.
 
-## Building
+## Building and releases
+
+CI (`.github/workflows/build-release.yml`) builds every push and pull request on a Windows runner, runs the offline tests and keeps the packaged
+zip as a workflow artifact. Pushing a tag `v*` publishes a GitHub Release with the zip (the plugin, the loader, `scripts/`, the command line tools,
+the docs and a `GAME_BUILD.txt` naming the game build) and its SHA-256 file; a tag with a hyphen (`v0.2.0-rc1`) is a pre-release.
+`pwsh scripts/package_release.ps1` makes the same zip from a local Release build.
 
 Visual Studio 2022 (MSVC, x64) and CMake 3.20+. MinHook is fetched by CMake; `stb_image` and `nlohmann/json` are single
 headers in `third_party/`.
@@ -181,8 +187,8 @@ mismatch and installs nothing). After a game patch: `pip install pefile capstone
 2. **Done:** mouse follow, click, click on hit areas, hover, appear, idle, greeting; expressions, blinking, breathing and lip sync;
    voice lines that follow the game's volume; views per portrait kind and size; supersampling; background loading within a memory budget.
 3. **Done:** the loader that makes the game load the plugin by itself; SDK checks (`tools/validate.py`, the plugin's self-test) and
-   offline tests.
-4. A checker for mods (what is wrong with a portrait file before the game is started), Spine, `pose3.json`, release builds by CI.
+   offline tests; CI that builds, tests and packages releases.
+4. A checker for mods (what is wrong with a portrait file before the game is started), Spine, `pose3.json`.
 
 ## Licensing
 

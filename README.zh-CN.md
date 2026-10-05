@@ -27,7 +27,7 @@ Stellaris 的肖像是骨骼动画的 2D 人物，渲染到一张渲染目标纹
 
 1. **Cubism Core。** 可以是 Live2D 官方的 `Live2DCubismCore.dll`（来自 live2d.com 的 Cubism SDK for Native，遵守 Live2D 的条款），也可以是兼容的重新实现：插件是用 [Purism Core](https://github.com/SakuraMotion/PurismCore) 测试的，它的作者以 MIT 许可证发布。这类重新实现是否被 Live2D 的条款允许，这里没有核实过，所以官方库最稳妥。插件使用 v5 版的 API（`csmGetDrawableRenderOrders` 和颜色相关的函数）；只有新版 API 的库暂不支持。
 2. **模型**：一个文件夹，里面有 `model3.json`、`moc3`、贴图（PNG、JPEG，或 DXT1/DXT3/DXT5 的 DDS，即游戏自己贴图的格式：显存占用是 RGBA8 的四分之一，mip 链存在文件里），可选的 `physics3.json` 和动作。`l2d_pack` 可以把模型的 PNG 贴图转成 DXT5。模型有它们作者的许可证。
-3. 编译插件（见下），运行 `python scripts\deploy.py`：它把 `stellaris_live2d.dll` 和加载器 `d3dx9_43.dll` 复制到 `stellaris.exe` 旁边，之后游戏启动几秒后会自己加载插件（`deploy.py --remove` 把两者都删掉；`stellaris.exe` 旁边放一个 `stellaris_live2d.disabled` 文件，这一次运行就不加载）。加载器是替身，替的是只有游戏的 exe 才会导入的一个系统 DLL：exe 所在的文件夹先被搜索，所以游戏会用它；它把每个调用转给真正的 `d3dx9_43.dll`，并加载插件（在别的程序里它什么也不做）。没有它时，`python scripts\l2dctl.py load` 把插件注入到正在运行的游戏里，只在这一次运行有效（还有 `unload`、`reload`、`status`）。
+3. 解压 [Releases](https://github.com/Yidhar/stellaris-live2d/releases) 页面上的 zip（或者自己编译，见下），在解压出的文件夹里运行 `python scripts\deploy.py`：它把 `stellaris_live2d.dll` 和加载器 `d3dx9_43.dll` 复制到 `stellaris.exe` 旁边，之后游戏启动几秒后会自己加载插件（`deploy.py --remove` 把两者都删掉；`stellaris.exe` 旁边放一个 `stellaris_live2d.disabled` 文件，这一次运行就不加载）。加载器是替身，替的是只有游戏的 exe 才会导入的一个系统 DLL：exe 所在的文件夹先被搜索，所以游戏会用它；它把每个调用转给真正的 `d3dx9_43.dll`，并加载插件（在别的程序里它什么也不做）。没有它时，`python scripts\l2dctl.py load` 把插件注入到正在运行的游戏里，只在这一次运行有效（还有 `unload`、`reload`、`status`）。
 4. 编辑 `stellaris.exe` 旁边的 `stellaris_live2d.ini`（首次运行时创建，每 2 秒重新读取），打开有肖像的界面（议会、领袖列表）；没有显示的话看 `stellaris_live2d.log`。
 
 | 键 | 默认值 | 含义 |
@@ -82,7 +82,9 @@ build\Release\l2d_bench.exe --core Live2DCubismCore.dll --size 575x380 --frames 
 
 `python scripts\ingame_multi_bench.py` 在真实游戏里跑几组模型（要先打开一个有肖像的界面，并加载 stellaris-perf 仓库的 `stellaris_bench.dll` 作为帧计数器），和关闭插件时的每秒帧数对比。
 
-## 编译
+## 编译和发布
+
+CI（`.github/workflows/build-release.yml`）在 Windows runner 上构建每一次推送和拉取请求，运行离线测试，并把打好的 zip 作为工作流产物保留。推送 `v*` 标签会发布一个 GitHub Release，里面有 zip（插件、加载器、`scripts/`、命令行工具、文档和一个写明游戏版本的 `GAME_BUILD.txt`）和它的 SHA-256 文件；带连字符的标签（`v0.2.0-rc1`）是预发布。`pwsh scripts/package_release.ps1` 用本地的 Release 构建打出同样的 zip。
 
 Visual Studio 2022（MSVC，x64）和 CMake 3.20+。MinHook 由 CMake 自动获取；`stb_image` 和 `nlohmann/json` 是 `third_party/` 里的单头文件。
 
@@ -108,8 +110,8 @@ DLL 只适用于它的 SDK 所定位的那个 `stellaris.exe`（加载时检查�
 
 1. **已完成：** 钩子、纹理写入、恢复、卸载；Core 加载、模型、动作、物理、渲染器；同时多个模型、DXT5 贴图、肖像组 mod。
 2. **已完成：** 鼠标跟随、点击、点击区域、悬停、出现、待机、问候；表情、眨眼、呼吸、口型；跟随游戏音量的语音；按肖像种类和大小的取景；超采样；在内存预算内后台加载。
-3. **已完成：** 让游戏自己加载插件的加载器；SDK 检查（`tools/validate.py`、插件自检）和离线测试。
-4. mod 检查器（启动游戏之前就发现肖像文件的问题）、Spine、`pose3.json`、由 CI 发布构建。
+3. **已完成：** 让游戏自己加载插件的加载器；SDK 检查（`tools/validate.py`、插件自检）和离线测试；构建、测试并打包发布的 CI。
+4. mod 检查器（启动游戏之前就发现肖像文件的问题）、Spine、`pose3.json`。
 
 ## 授权
 

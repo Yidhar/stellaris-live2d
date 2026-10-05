@@ -49,8 +49,11 @@ def main():
                 except OSError as e:
                     print(f"could not remove {path}: {e} (the game has it loaded: close the game first)")
         return 0
-    plugin_src = os.path.join(a.build, "Release", "stellaris_live2d.dll")
-    loader_src = os.path.join(a.build, "loader", "d3dx9_43.dll")
+    # in an unpacked release zip the two DLLs sit next to scripts/; in a source checkout they are in the build folder
+    plugin_src = next((p for p in (os.path.join(ROOT, "stellaris_live2d.dll"), os.path.join(a.build, "Release", "stellaris_live2d.dll")) if os.path.exists(p)), None)
+    loader_src = next((p for p in (os.path.join(ROOT, "d3dx9_43.dll"), os.path.join(a.build, "loader", "d3dx9_43.dll")) if os.path.exists(p)), None)
+    if not plugin_src or not loader_src:
+        raise SystemExit("stellaris_live2d.dll / d3dx9_43.dll not found next to scripts/ or in the build folder (--build)")
     shutil.copyfile(plugin_src, plugin_dst)
     print("copied", plugin_dst)
     if running and os.path.exists(loader_dst):
