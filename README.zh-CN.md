@@ -23,12 +23,12 @@ Stellaris 的肖像是骨骼动画的 2D 人物，渲染到一张渲染目标纹
 
 ## 安装和使用
 
-**快速开始**（发布包）：解压 [Releases](https://github.com/Yidhar/stellaris-live2d/releases) 页面上的 zip，在解压出的文件夹里运行 `python scripts\deploy.py`（需要 Python 3.8+；它会在你的 Steam 库里找到 Stellaris，找不到时用 `--game <stellaris.exe 所在的文件夹>`），启用一个使用该插件的肖像 mod（[演示 mod](https://github.com/Yidhar/stellaris-live2d-demo-mod) 展示了语法，模型需要你自己添加），然后启动游戏。`deploy.py` 会把插件、加载器和一个 Cubism Core 复制到 `stellaris.exe` 旁边，并写好 `stellaris_live2d.ini`，不需要再设置别的。`python scripts\deploy.py --remove` 把这些全部撤掉。
+**快速开始**（发布包）：解压 [Releases](https://github.com/Yidhar/stellaris-live2d/releases) 页面上的 zip，在解压出的文件夹里运行 `python scripts\deploy.py`（需要 Python 3.8+；它会在你的 Steam 库里找到 Stellaris，找不到时用 `--game <stellaris.exe 所在的文件夹>`），启用一个使用该插件的肖像 mod（[演示 mod](https://github.com/Yidhar/stellaris-live2d-demo-mod) 展示了语法，自带测试用的模型），然后启动游戏。`deploy.py` 会把插件、加载器和一个 Cubism Core 复制到 `stellaris.exe` 旁边，并写好 `stellaris_live2d.ini`，不需要再设置别的。`python scripts\deploy.py --remove` 把这些全部撤掉。
 
 细节：
 
 1. **Cubism Core。** 发布包（以及这个仓库的构建）里自带 `Live2DCubismCore.dll`：[Purism Core](https://github.com/SakuraMotion/PurismCore) 1.1.0，一个兼容的重新实现，作者以 MIT 许可证发布，由 `third_party/purism_core/` 原样编译（`-DL2D_BUILD_PURISM_CORE=OFF` 可以不编）。这类重新实现是否被 Live2D 的条款允许，这里没有核实过，所以 Live2D 官方的 `Live2DCubismCore.dll`（来自 live2d.com 的 Cubism SDK for Native，遵守 Live2D 的条款）最稳妥：让 ini 里的 `core_dll` 指向它即可。插件使用 v5 版的 API（`csmGetDrawableRenderOrders` 和颜色相关的函数）；只有新版 API 的库暂不支持。
-2. **模型**：一个文件夹，里面有 `model3.json`、`moc3`、贴图（PNG、JPEG，或 DXT1/DXT3/DXT5 的 DDS，即游戏自己贴图的格式：显存占用是 RGBA8 的四分之一，mip 链存在文件里），可选的有 `physics3.json` 和动作。`l2d_pack` 把模型的 PNG 贴图转成 DXT5。模型不包含在内，各有作者的许可证。
+2. **模型**：一个文件夹，里面有 `model3.json`、`moc3`、贴图（PNG、JPEG，或 DXT1/DXT3/DXT5 的 DDS，即游戏自己贴图的格式：显存占用是 RGBA8 的四分之一，mip 链存在文件里），可选的有 `physics3.json` 和动作。`l2d_pack` 把模型的 PNG 贴图转成 DXT5。这个仓库不包含模型（上面的演示 mod 自带了一些，署名在它的 `ASSETS.md` 里），模型各有作者的许可证。
 3. **加载器。** `deploy.py` 把 `stellaris_live2d.dll` 和加载器 `d3dx9_43.dll` 复制到 `stellaris.exe` 旁边，之后游戏启动几秒后会自己加载插件（`stellaris.exe` 旁边放一个 `stellaris_live2d.disabled` 文件，这一次运行就不加载）。加载器是替身，替的是只有游戏的 exe 才会导入的一个系统 DLL：exe 所在的文件夹先被搜索，所以游戏会用它；它把每个调用转给真正的 `d3dx9_43.dll`，并加载插件（在别的程序里它什么也不做）。没有它时，`python scripts\l2dctl.py load` 把插件注入到正在运行的游戏里，只在这一次运行有效（还有 `unload`、`reload`、`status`）。
 4. **ini。** `deploy.py` 在 `stellaris.exe` 旁边写 `stellaris_live2d.ini`，含 `live2d=1` 和 `core_dll`（已有的 ini 只补上缺的键）；随时可以编辑，每 2 秒重新读取。打开有肖像的界面（议政厅、领袖列表）；没有显示的话看 `stellaris_live2d.log`。
 
@@ -56,7 +56,7 @@ Stellaris 的肖像是骨骼动画的 2D 人物，渲染到一张渲染目标纹
 推荐的用法是做一个 mod：mod 带着模型，并声明它们替换哪些肖像。mod 用游戏自己注册肖像的脚本语法写出要交给插件绘制的肖像键，再加几个额外的键（`live2d = yes`、`spine = yes`、`live2d_model`、`live2d_view`、`live2d_scale`、`live2d_unmirror`，以及 `live2d_actions`，用来声明鼠标跟随、点击、悬停、出现、待机和游戏问候音效时发生什么）。插件从已启用 mod 的 `gfx/portraits/live2d/*.txt`（引擎会忽略的文件夹）或 `gfx/portraits/portraits/*.txt` 读取它们，并把每个模型绑定到引擎为某个肖像报告的肖像键上。没有安装插件的游戏照常画普通肖像。领袖、统治者、物种和人口用哪些肖像，由游戏自己的 `portrait_groups` 语法决定：mod 把自己的键列进某个组，就能让每个领袖或人口用不同的模型，不需要额外语法。动作组、表情和点击区域来自模型自己的 `model3.json`，mod 只说在哪个事件播哪个。
 
 - 语法、事件、取景、加载和肖像组的规则：[docs/portrait-mod-design.md](docs/portrait-mod-design.md)。
-- **演示 mod** 在单独的仓库 [stellaris-live2d-demo-mod](https://github.com/Yidhar/stellaris-live2d-demo-mod)：把 `human` 肖像组换成十个 Live2D 肖像（每个作用域先写 `set`，再写 `add`），原版肖像键也绑定了模型，每一种事件、语音、取景和缩放选项都用了一次。它不带模型（做它时用的模型是别人的作品），请自备模型。
+- **演示 mod** 在单独的仓库 [stellaris-live2d-demo-mod](https://github.com/Yidhar/stellaris-live2d-demo-mod)：把 `human` 肖像组换成十个 Live2D 肖像（每个作用域先写 `set`，再写 `add`），原版肖像键也绑定了模型，每一种事件、语音、取景和缩放选项都用了一次。它自带插件测试用的九个模型（和它们的动作组），所以拿来就能用：这些是别人的作品（《少女前线》），只作为测试素材，署名、来源和下架方式写在它的 `ASSETS.md` 里。
 - 许多模型的 `login` 动作是舞台入场（黑幕、镜头推拉）；`live2d_ignore_parameters` 会跳过你指定的参数的曲线，`python tools/motion_diff.py <model3.json>` 能帮你找出它们（见设计文档的 *Stage effects in motions* 一节）。
 - 两条值得知道的规则：在多个文件里定义的肖像组会被*合并*，所以每个作用域的第一条必须是 `set`，才能丢掉原版列出的肖像；脚本或帝国设计器直接按名字指定的肖像（统治者的）不是从组里抽的，所以原版的键也要绑定。
 - `python scripts\make_human_mod.py --enable` 用本地模型生成测试 mod（`--export-demo <文件夹>` 写出演示仓库的文本文件）；`python scripts\load_save.py <存档> --folder <文件夹>` 在某个存档上重启游戏。

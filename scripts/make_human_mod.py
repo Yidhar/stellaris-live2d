@@ -17,8 +17,8 @@ that fades away, a camera move). --ignore-stage lists the parameters of those ef
 tools/motion_diff.py) so only the character's own animation plays, and gives the one model whose login is a whole scene a wait motion.
 
 --enable also adds the mod to the playset (dlc_load.json, the original is kept as dlc_load.json.live2d_backup).
---export-demo copies only the text of the mod (descriptor.mod and the two portrait files, no models, no sound) into a folder: the demo mod
-repository is kept that way, since the test models are third-party art.
+--export-demo copies the mod as the demo mod repository keeps it into a folder: descriptor.mod, the two portrait files, the models (with
+the expression this script adds) and the voice lines, the model folders renamed model_01.. and the sound folder sound/demo.
 """
 import argparse
 import json
@@ -146,7 +146,7 @@ def main():
     ap.add_argument("--models", default=os.path.join(ROOT, "models_dxt5"))
     ap.add_argument("--enable", action="store_true")
     ap.add_argument("--ignore-stage", action="store_true", help="skip the stage parameters of each model's login motion (see above)")
-    ap.add_argument("--export-demo", metavar="FOLDER", help="also copy the mod's text files (no art) into FOLDER")
+    ap.add_argument("--export-demo", metavar="FOLDER", help="also copy the mod, with its models and voice lines, into FOLDER (the demo repository)")
     ap.add_argument("--voices", default=os.path.join(ROOT, "scratch", "voice"),
                     help="folder of WAV/MP3/FLAC/OGG lines every portrait says when clicked (see make_test_voices.ps1); none if missing")
     a = ap.parse_args()
@@ -226,7 +226,13 @@ def main():
                 for model, name in names.items():
                     text = text.replace(f"gfx/live2d/{model}/", f"gfx/live2d/{name}/")
                 f.write(text)
-        print(f"text files exported to {a.export_demo}")
+        # the models (as packed, with the expression added above) and the voice lines, under the renamed folders
+        for model, name in names.items():
+            shutil.copytree(os.path.join(a.out, "gfx", "live2d", model), os.path.join(a.export_demo, "gfx", "live2d", name), dirs_exist_ok=True)
+        voices = os.path.join(a.out, "sound", "live2d_test")
+        if os.path.isdir(voices):
+            shutil.copytree(voices, os.path.join(a.export_demo, "sound", "demo"), dirs_exist_ok=True)
+        print(f"the mod exported to {a.export_demo}")
         for key, model in ASSIGN.items():
             print(f"  {new_key(key)} (and {key}) -> gfx/live2d/{names[model]}/")
 
