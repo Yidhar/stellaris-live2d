@@ -1,6 +1,6 @@
 # third_party
 
-Single-header libraries copied unchanged, so the build needs no network access for them.
+Libraries copied unchanged, so the build needs no network access for them.
 
 | File | Project | Version | License |
 |---|---|---|---|
@@ -9,3 +9,4 @@ Single-header libraries copied unchanged, so the build needs no network access f
 | `stb_dxt.h` | [nothings/stb](https://github.com/nothings/stb) | commit 2c980bb (stb_dxt 1.12) | public domain (or MIT, see the end of the file); used by `l2d_pack` only |
 | `stb_image.h`, `stb_image_write.h` | [nothings/stb](https://github.com/nothings/stb) | commit 2c980bb (stb_image 2.30) | public domain (or MIT, see the end of each file) |
 | `nlohmann/json.hpp` | [nlohmann/json](https://github.com/nlohmann/json) | 3.11.3 | MIT |
+| `purism_core/PurismCoreBundle-v1.1.0.h`, `purism_core/LICENSE` | [SakuraMotion/PurismCore](https://github.com/SakuraMotion/PurismCore) | 1.1.0 (the release asset, unchanged) | MIT; built into `Live2DCubismCore.dll` by `purism_core/core_dll.c` (ours) |

@@ -1,0 +1,78 @@
+name: Build and release
+
+# Every push to main and every pull request builds the plugin, the loader and the tools, runs the offline tests (no game needed) and keeps
+# the packaged zip as a workflow artifact. Pushing a tag v* (for example v0.1.0) also publishes a GitHub Release with the zip and its
+# SHA-256 file; a tag with a hyphen (v0.2.0-rc1) is marked as a pre-release.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write  # creating the release
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # the scripts ship in the zip, so a syntax error must fail the build
+      - name: Check the Python scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $files = Get-ChildItem -Recurse -Filter *.py scripts, tools | ForEach-Object FullName
+          python -m py_compile @files
+          if ($LASTEXITCODE -ne 0) { throw "py_compile failed" }
+
+      # ---- MSVC x64 (MASM for the loader); MinHook comes from FetchContent
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      # the script reader, the registry, DDS, mips and the framing maths; they need neither the game nor a Cubism Core
+      - name: Offline tests
+        run: build/Release/l2d_tests.exe
+
+      - name: Package
+        id: package
+        shell: pwsh
+        run: |
+          $ver = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME } else { "dev-$($env:GITHUB_SHA.Substring(0, 7))" }
+          ./scripts/package_release.ps1 -Version $ver
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stellaris-live2d-${{ steps.package.outputs.version }}
+          path: package/*.zip*
+
+      # ---- release (tags only)
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: package/*.zip*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          body: |
+            Built for **Stellaris 4.5.1** (Windows x64), `stellaris.exe` PE timestamp `${{ steps.package.outputs.exe_timestamp }}` (${{ steps.package.outputs.exe_built }}).
+            The DLL only works with that exact game build; with any other it logs the mismatch and installs nothing.
+
+            **Quick start:** unpack the zip, run `python scripts\deploy.py` (Python 3.8+; it finds Stellaris in your Steam libraries, or use `--game`) and
+            start the game with a portrait mod enabled. `deploy.py` copies the plugin, the loader and a Cubism Core next to `stellaris.exe` and writes
+            `stellaris_live2d.ini`; `deploy.py --remove` undoes it.
+
+            The zip includes [Purism Core](https://github.com/SakuraMotion/PurismCore) 1.1.0 (MIT) as `Live2DCubismCore.dll`, built unchanged in CI. Whether
+            such a reimplementation is allowed under Live2D's terms has not been checked, so Live2D's own library can be used instead (`core_dll` in the ini).
+            The loader `d3dx9_43.dll` is a stand-in for a system DLL and some antivirus software flags it; the README's "Known limits" explains why, and
+            the source is in `loader/`. The licenses of what is built into the DLLs are in `THIRD_PARTY_NOTICES.txt`.
+
+            Models are not included either: see the [demo mod](https://github.com/Yidhar/stellaris-live2d-demo-mod) for the mod syntax.
