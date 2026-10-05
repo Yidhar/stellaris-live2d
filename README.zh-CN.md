@@ -25,7 +25,7 @@ Stellaris 的肖像是骨骼动画的 2D 人物，渲染到一张渲染目标纹
 
 你需要一个 Cubism Core 库和一个模型，这两样都不包含在仓库里。
 
-1. **Cubism Core。** 可以是 Live2D 官方的 `Live2DCubismCore.dll`（来自 live2d.com 的 Cubism SDK for Native，遵守 Live2D 的条款），也可以是兼容的替代品，例如 [Purism Core](https://github.com/SakuraMotion/PurismCore)（MIT）。插件使用 v5 版的 API（`csmGetDrawableRenderOrders` 和颜色相关的函数）；只有新版 API 的库暂不支持。
+1. **Cubism Core。** 可以是 Live2D 官方的 `Live2DCubismCore.dll`（来自 live2d.com 的 Cubism SDK for Native，遵守 Live2D 的条款），也可以是兼容的重新实现：插件是用 [Purism Core](https://github.com/SakuraMotion/PurismCore) 测试的，它的作者以 MIT 许可证发布。这类重新实现是否被 Live2D 的条款允许，这里没有核实过，所以官方库最稳妥。插件使用 v5 版的 API（`csmGetDrawableRenderOrders` 和颜色相关的函数）；只有新版 API 的库暂不支持。
 2. **模型**：一个文件夹，里面有 `model3.json`、`moc3`、贴图（PNG、JPEG，或 DXT1/DXT3/DXT5 的 DDS，即游戏自己贴图的格式：显存占用是 RGBA8 的四分之一，mip 链存在文件里），可选的 `physics3.json` 和动作。`l2d_pack` 可以把模型的 PNG 贴图转成 DXT5。模型有它们作者的许可证。
 3. 编译插件（见下），运行 `python scripts\deploy.py`：它把 `stellaris_live2d.dll` 和加载器 `d3dx9_43.dll` 复制到 `stellaris.exe` 旁边，之后游戏启动几秒后会自己加载插件（`deploy.py --remove` 把两者都删掉；`stellaris.exe` 旁边放一个 `stellaris_live2d.disabled` 文件，这一次运行就不加载）。加载器是替身，替的是只有游戏的 exe 才会导入的一个系统 DLL：exe 所在的文件夹先被搜索，所以游戏会用它；它把每个调用转给真正的 `d3dx9_43.dll`，并加载插件（在别的程序里它什么也不做）。没有它时，`python scripts\l2dctl.py load` 把插件注入到正在运行的游戏里，只在这一次运行有效（还有 `unload`、`reload`、`status`）。
 4. 编辑 `stellaris.exe` 旁边的 `stellaris_live2d.ini`（首次运行时创建，每 2 秒重新读取），打开有肖像的界面（议会、领袖列表）；没有显示的话看 `stellaris_live2d.log`。
@@ -96,6 +96,13 @@ DLL 只适用于它的 SDK 所定位的那个 `stellaris.exe`（加载时检查�
 - `python tools/validate.py`：定位器找到的仍是头文件里写的，每个手工或在游戏里验证过的值没有变，布局的不变量成立；没有指纹可找的常量（GUI 对象的布局）如果是为另一个版本验证的，它会说出来。这相当于主仓库 SDK dumper 的 `validate.py`。
 - 游戏运行、屏幕上有肖像时运行 `python tools/live_verify.py`：插件自己检查活的对象（肖像键和种类、矩形、窗口和 GUI 大小、游戏音量，以及游戏窗口在前台时的鼠标位置），把结果写进日志，这个脚本把它打印出来。
 - `build\Release\l2d_tests.exe`（或在 `build` 里运行 `ctest -C Release`）：脚本读取器、肖像注册表、DDS 读取、mip 链和取景计算的离线检查。
+
+## 已知限制
+
+- **加载器在扫描软件眼里像恶意程序。** `stellaris.exe` 旁边的 `d3dx9_43.dll` 是一个系统 DLL 的替身，它把每个调用转发出去并加载插件：和 DLL 劫持是同一种手法，杀毒软件可能报警。它由这个仓库的 `loader/` 编译而来，在 `stellaris.exe` 之外的任何程序里什么也不做。在 Steam 里验证游戏文件会把它删掉，`python scripts\deploy.py --remove` 也会。`l2dctl.py load` 不需要它，直接注入。
+- **只对应一个游戏版本。** 地址由 `tools/locate.py` 在已安装的 `stellaris.exe` 里定位；游戏更新后 DLL 会在日志里写出不匹配并且什么也不安装（不会因此让游戏崩溃）。重新运行定位器和 `tools/validate.py`，再重新编译。
+- **只在一台机器上测过**（Windows 11、一块 AMD 显卡、1920x1080、UI 缩放 1），只支持 Direct3D 11（`-dx11`）。其他显卡、分辨率和 UI 缩放没有测过；多人游戏没有测过（插件只改变这个客户端画什么）。
+- 没有实现：Spine、`pose3.json`、拖拽和滚轮缩放。物理是独立实现，没有和 Live2D 自己的对比过。
 
 ## 计划
 

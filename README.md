@@ -52,7 +52,9 @@ hooks that function; after the original returns it replaces the portrait's rende
 You need a Cubism Core library and a model. Neither is included.
 
 1. **Cubism Core.** Either Live2D's official `Live2DCubismCore.dll` (from the Cubism SDK for Native on live2d.com, under
-   Live2D's terms), or a compatible one such as [Purism Core](https://github.com/SakuraMotion/PurismCore) (MIT). The plugin
+   Live2D's terms), or a compatible reimplementation: the plugin was tested with [Purism Core](https://github.com/SakuraMotion/PurismCore), which its author
+   publishes under the MIT license. Whether using such a reimplementation is allowed under Live2D's terms has not been checked here, so
+   the official library is the safe choice. The plugin
    uses the v5 API (`csmGetDrawableRenderOrders` and the colour functions); a library with only the newer API is not
    supported yet.
 2. **A model**: a folder with `model3.json`, the `moc3`, textures (PNG, JPEG, or DDS in DXT1/DXT3/DXT5, the format of the game's
@@ -159,6 +161,18 @@ mismatch and installs nothing). After a game patch: `pip install pefile capstone
   its log; this prints it.
 - `build\Release\l2d_tests.exe` (or `ctest -C Release` in `build`): offline checks of the script reader, the portrait registry, DDS reading,
   mip chains and the framing maths.
+
+## Known limits
+
+- **The loader looks like malware to a scanner.** `d3dx9_43.dll` next to `stellaris.exe` is a stand-in for a system DLL that passes every
+  call on and loads the plugin: the same technique DLL hijacking uses, and antivirus software may flag it. It is built from `loader/` in
+  this repository and does nothing in any program but `stellaris.exe`. Verifying the game's files in Steam removes it; so does
+  `python scripts\deploy.py --remove`. `l2dctl.py load` injects without it.
+- **One game build.** Addresses are located in the installed `stellaris.exe` by `tools/locate.py`; after a game patch the DLL logs the
+  mismatch and installs nothing (it cannot crash the game over it). Rerun the locator and `tools/validate.py` and rebuild.
+- **Tested on one machine** (Windows 11, one AMD GPU, 1920x1080, UI scale 1), with Direct3D 11 (`-dx11`) only. Other GPUs, other
+  resolutions and UI scales are untested; multiplayer is untested (the plugin only changes what this client draws).
+- Not implemented: Spine, `pose3.json`, dragging and wheel zoom. The physics is an independent implementation, not compared with Live2D's.
 
 ## Plan
 
