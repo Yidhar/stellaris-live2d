@@ -49,26 +49,32 @@ hooks that function; after the original returns it replaces the portrait's rende
 
 ## Install and use
 
-You need a Cubism Core library and a model. Neither is included.
+**Quick start** (the release zip): unpack a zip from the [Releases](https://github.com/Yidhar/stellaris-live2d/releases) page, run
+`python scripts\deploy.py` in the unpacked folder (Python 3.8+; it finds Stellaris in your Steam libraries, or use `--game <folder of
+stellaris.exe>`), enable a portrait mod that uses the plugin (the [demo mod](https://github.com/Yidhar/stellaris-live2d-demo-mod) shows the
+syntax; the models are yours to add) and start the game. `deploy.py` copies the plugin, the loader and a Cubism Core next to `stellaris.exe` and
+writes `stellaris_live2d.ini`, so nothing else has to be set up. `python scripts\deploy.py --remove` takes it all away again.
 
-1. **Cubism Core.** Either Live2D's official `Live2DCubismCore.dll` (from the Cubism SDK for Native on live2d.com, under
-   Live2D's terms), or a compatible reimplementation: the plugin was tested with [Purism Core](https://github.com/SakuraMotion/PurismCore), which its author
-   publishes under the MIT license. Whether using such a reimplementation is allowed under Live2D's terms has not been checked here, so
-   the official library is the safe choice. The plugin
-   uses the v5 API (`csmGetDrawableRenderOrders` and the colour functions); a library with only the newer API is not
-   supported yet.
+The details:
+
+1. **Cubism Core.** The release zip (and a build of this repository) includes `Live2DCubismCore.dll`: [Purism Core](https://github.com/SakuraMotion/PurismCore)
+   1.1.0, a compatible reimplementation that its author publishes under the MIT license, built unchanged from `third_party/purism_core/`
+   (`-DL2D_BUILD_PURISM_CORE=OFF` leaves it out). Whether using such a reimplementation is allowed under Live2D's terms has not been checked
+   here, so Live2D's official `Live2DCubismCore.dll` (from the Cubism SDK for Native on live2d.com, under Live2D's terms) is the safe
+   choice: point `core_dll` in the ini at it. The plugin uses the v5 API (`csmGetDrawableRenderOrders` and the colour functions); a library
+   with only the newer API is not supported yet.
 2. **A model**: a folder with `model3.json`, the `moc3`, textures (PNG, JPEG, or DDS in DXT1/DXT3/DXT5, the format of the game's
    own textures: a quarter of the video memory, with the mip chain stored in the file) and optionally `physics3.json` and
-   motions. `l2d_pack` converts a model's PNG textures to DXT5. Models carry their authors' licenses.
-3. Unpack a zip from the [Releases](https://github.com/Yidhar/stellaris-live2d/releases) page (or build the plugin, below), and run
-   `python scripts\deploy.py` from that folder: it copies `stellaris_live2d.dll` and the loader `d3dx9_43.dll` next to
-   `stellaris.exe`, and from then on the game loads the plugin by itself a few seconds after it starts (`deploy.py --remove` takes
-   both away; a file `stellaris_live2d.disabled` next to the exe stops the loader for a session). The loader is a stand-in for a system
-   DLL that only the game's exe imports: the folder of the exe is searched first, so the game picks it up, it passes every call on to the
-   real `d3dx9_43.dll` and loads the plugin (it does nothing in any other program). Without it, `python scripts\l2dctl.py load` injects
-   the plugin into a running game for that session (`unload`, `reload` and `status` work too).
-4. Edit `stellaris_live2d.ini` next to `stellaris.exe` (created on first run, re-read every 2 seconds), open a screen with
-   portraits (the council, the leaders list), and look at `stellaris_live2d.log` if nothing shows.
+   motions. `l2d_pack` converts a model's PNG textures to DXT5. Models are not included and carry their authors' licenses.
+3. **The loader.** `deploy.py` copies `stellaris_live2d.dll` and the loader `d3dx9_43.dll` next to `stellaris.exe`, and from then on the game
+   loads the plugin by itself a few seconds after it starts (a file `stellaris_live2d.disabled` next to the exe stops the loader for a
+   session). The loader is a stand-in for a system DLL that only the game's exe imports: the folder of the exe is searched first, so the
+   game picks it up, it passes every call on to the real `d3dx9_43.dll` and loads the plugin (it does nothing in any other program).
+   Without it, `python scripts\l2dctl.py load` injects the plugin into a running game for that session (`unload`, `reload` and `status`
+   work too).
+4. **The ini.** `deploy.py` writes `stellaris_live2d.ini` next to `stellaris.exe` with `live2d=1` and `core_dll` (it only adds keys an
+   existing ini lacks); edit it any time, it is re-read every 2 seconds. Open a screen with portraits (the council, the leaders list), and
+   look at `stellaris_live2d.log` if nothing shows.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -197,8 +203,9 @@ The code here is MIT. It does not include or download any Live2D code or any mod
 - **Cubism Core** is Live2D's proprietary library and is not redistributed here (see step 1 above). Check the terms of
   whichever you use; Live2D's license has special rules for applications that let third parties add content.
 - **Models** are the work of their authors and carry their own licenses.
-- `third_party/` holds single-header libraries (miniaudio, the stb libraries, `nlohmann/json`), see `third_party/README.md`;
-  MinHook (BSD-2-Clause) is fetched by CMake.
+- `third_party/` holds single-header libraries (miniaudio, the stb libraries, `nlohmann/json`) and the Purism Core bundle (MIT), see
+  `third_party/README.md`; MinHook (BSD-2-Clause) is fetched by CMake. The licenses of what ends up inside the DLLs of a release are in its
+  `THIRD_PARTY_NOTICES.txt`.
 
 ## License
 

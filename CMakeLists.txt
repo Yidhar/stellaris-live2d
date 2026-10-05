@@ -82,6 +82,18 @@ target_include_directories(l2d_loader PRIVATE loader)
 set_target_properties(l2d_loader PROPERTIES OUTPUT_NAME "d3dx9_43" PREFIX "" RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/loader>")
 target_compile_definitions(l2d_loader PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
 
+# Purism Core (MIT, Sakura Motion Project) built as Live2DCubismCore.dll, so a release works without any other download: the plugin loads a
+# Cubism Core v5 library, and this is a compatible one. The single-file bundle is the upstream release asset v1.1.0, unchanged, in
+# third_party/purism_core/ with its license; only core_dll.c there is ours. Switch it off (-DL2D_BUILD_PURISM_CORE=OFF) to use Live2D's
+# official Core instead.
+option(L2D_BUILD_PURISM_CORE "Build Purism Core as Live2DCubismCore.dll" ON)
+if(L2D_BUILD_PURISM_CORE)
+    add_library(purism_core SHARED third_party/purism_core/core_dll.c)
+    target_include_directories(purism_core PRIVATE third_party/purism_core)
+    target_compile_definitions(purism_core PRIVATE PURISM_BUNDLE_HEADER="PurismCoreBundle-v1.1.0.h" _CRT_SECURE_NO_WARNINGS)
+    set_target_properties(purism_core PROPERTIES OUTPUT_NAME "Live2DCubismCore" PREFIX "" C_STANDARD 11)
+endif()
+
 # l2d_tests.exe: checks of what needs neither the game nor the Cubism Core (script reader, registry, DDS, mips, framing); `ctest -C Release`
 add_executable(l2d_tests tests/test_main.cpp src/pdx_script.cpp src/portrait_registry.cpp)
 target_link_libraries(l2d_tests PRIVATE l2d_core shell32 ole32)

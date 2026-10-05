@@ -23,12 +23,14 @@ Stellaris 的肖像是骨骼动画的 2D 人物，渲染到一张渲染目标纹
 
 ## 安装和使用
 
-你需要一个 Cubism Core 库和一个模型，这两样都不包含在仓库里。
+**快速开始**（发布包）：解压 [Releases](https://github.com/Yidhar/stellaris-live2d/releases) 页面上的 zip，在解压出的文件夹里运行 `python scripts\deploy.py`（需要 Python 3.8+；它会在你的 Steam 库里找到 Stellaris，找不到时用 `--game <stellaris.exe 所在的文件夹>`），启用一个使用该插件的肖像 mod（[演示 mod](https://github.com/Yidhar/stellaris-live2d-demo-mod) 展示了语法，模型需要你自己添加），然后启动游戏。`deploy.py` 会把插件、加载器和一个 Cubism Core 复制到 `stellaris.exe` 旁边，并写好 `stellaris_live2d.ini`，不需要再设置别的。`python scripts\deploy.py --remove` 把这些全部撤掉。
 
-1. **Cubism Core。** 可以是 Live2D 官方的 `Live2DCubismCore.dll`（来自 live2d.com 的 Cubism SDK for Native，遵守 Live2D 的条款），也可以是兼容的重新实现：插件是用 [Purism Core](https://github.com/SakuraMotion/PurismCore) 测试的，它的作者以 MIT 许可证发布。这类重新实现是否被 Live2D 的条款允许，这里没有核实过，所以官方库最稳妥。插件使用 v5 版的 API（`csmGetDrawableRenderOrders` 和颜色相关的函数）；只有新版 API 的库暂不支持。
-2. **模型**：一个文件夹，里面有 `model3.json`、`moc3`、贴图（PNG、JPEG，或 DXT1/DXT3/DXT5 的 DDS，即游戏自己贴图的格式：显存占用是 RGBA8 的四分之一，mip 链存在文件里），可选的 `physics3.json` 和动作。`l2d_pack` 可以把模型的 PNG 贴图转成 DXT5。模型有它们作者的许可证。
-3. 解压 [Releases](https://github.com/Yidhar/stellaris-live2d/releases) 页面上的 zip（或者自己编译，见下），在解压出的文件夹里运行 `python scripts\deploy.py`：它把 `stellaris_live2d.dll` 和加载器 `d3dx9_43.dll` 复制到 `stellaris.exe` 旁边，之后游戏启动几秒后会自己加载插件（`deploy.py --remove` 把两者都删掉；`stellaris.exe` 旁边放一个 `stellaris_live2d.disabled` 文件，这一次运行就不加载）。加载器是替身，替的是只有游戏的 exe 才会导入的一个系统 DLL：exe 所在的文件夹先被搜索，所以游戏会用它；它把每个调用转给真正的 `d3dx9_43.dll`，并加载插件（在别的程序里它什么也不做）。没有它时，`python scripts\l2dctl.py load` 把插件注入到正在运行的游戏里，只在这一次运行有效（还有 `unload`、`reload`、`status`）。
-4. 编辑 `stellaris.exe` 旁边的 `stellaris_live2d.ini`（首次运行时创建，每 2 秒重新读取），打开有肖像的界面（议会、领袖列表）；没有显示的话看 `stellaris_live2d.log`。
+细节：
+
+1. **Cubism Core。** 发布包（以及这个仓库的构建）里自带 `Live2DCubismCore.dll`：[Purism Core](https://github.com/SakuraMotion/PurismCore) 1.1.0，一个兼容的重新实现，作者以 MIT 许可证发布，由 `third_party/purism_core/` 原样编译（`-DL2D_BUILD_PURISM_CORE=OFF` 可以不编）。这类重新实现是否被 Live2D 的条款允许，这里没有核实过，所以 Live2D 官方的 `Live2DCubismCore.dll`（来自 live2d.com 的 Cubism SDK for Native，遵守 Live2D 的条款）最稳妥：让 ini 里的 `core_dll` 指向它即可。插件使用 v5 版的 API（`csmGetDrawableRenderOrders` 和颜色相关的函数）；只有新版 API 的库暂不支持。
+2. **模型**：一个文件夹，里面有 `model3.json`、`moc3`、贴图（PNG、JPEG，或 DXT1/DXT3/DXT5 的 DDS，即游戏自己贴图的格式：显存占用是 RGBA8 的四分之一，mip 链存在文件里），可选的有 `physics3.json` 和动作。`l2d_pack` 把模型的 PNG 贴图转成 DXT5。模型不包含在内，各有作者的许可证。
+3. **加载器。** `deploy.py` 把 `stellaris_live2d.dll` 和加载器 `d3dx9_43.dll` 复制到 `stellaris.exe` 旁边，之后游戏启动几秒后会自己加载插件（`stellaris.exe` 旁边放一个 `stellaris_live2d.disabled` 文件，这一次运行就不加载）。加载器是替身，替的是只有游戏的 exe 才会导入的一个系统 DLL：exe 所在的文件夹先被搜索，所以游戏会用它；它把每个调用转给真正的 `d3dx9_43.dll`，并加载插件（在别的程序里它什么也不做）。没有它时，`python scripts\l2dctl.py load` 把插件注入到正在运行的游戏里，只在这一次运行有效（还有 `unload`、`reload`、`status`）。
+4. **ini。** `deploy.py` 在 `stellaris.exe` 旁边写 `stellaris_live2d.ini`，含 `live2d=1` 和 `core_dll`（已有的 ini 只补上缺的键）；随时可以编辑，每 2 秒重新读取。打开有肖像的界面（议政厅、领袖列表）；没有显示的话看 `stellaris_live2d.log`。
 
 | 键 | 默认值 | 含义 |
 |---|---|---|
@@ -119,7 +121,7 @@ DLL 只适用于它的 SDK 所定位的那个 `stellaris.exe`（加载时检查�
 
 - **Cubism Core** 是 Live2D 的专有库，这里不分发（见上面的第 1 步）。请查看你所用的那个的条款；Live2D 的协议对允许第三方添加内容的应用有特别规定。
 - **模型**是作者的作品，各自有自己的许可证。
-- `third_party/` 里是单头文件库（miniaudio、stb 系列、`nlohmann/json`），见 `third_party/README.md`；MinHook（BSD-2-Clause）由 CMake 获取。
+- `third_party/` 里是单头文件库（miniaudio、stb 系列、`nlohmann/json`）和 Purism Core 的合并头文件（MIT），见 `third_party/README.md`；MinHook（BSD-2-Clause）由 CMake 获取。发布包里编进 DLL 的东西的许可证在它的 `THIRD_PARTY_NOTICES.txt` 里。
 
 ## 许可证
 
