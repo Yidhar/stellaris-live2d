@@ -52,7 +52,7 @@ portraits = {
 			click      = { motion_group = "touch*" }                           # the left button went down on the picture
 			click_head = { motion_group = "touch*"  expression = "smile" }     # ... on a hit area of the model (click_<Name>)
 			hover      = { expression = "smile"  expression_hold = 1.5 }       # the pointer came onto the picture
-			appear     = { motion_group = "login"  ignore_parameters = { "ParamBlack*" } }   # the portrait shows up
+			appear     = { motion_group = "login" }                            # the portrait shows up
 			idle       = { motion_group = "wait*"  interval = { 15 30 } }      # now and then while it is shown
 			greeting   = { motion_group = "touch*"  replace_engine_sound = no }   # the game plays the portrait's greeting sound
 		}
@@ -160,13 +160,16 @@ file as well (`scripts/make_human_mod.py` binds `human_female_01..05` and `human
 ## Stage effects in motions
 
 Many models were made for a game's login screen, and their `login` motion is a stage entrance, not just a pose: a black curtain that fades
-in or out, a virtual camera that zooms and pans, a spotlight, photo frames. Inside a portrait that shows up as a dark box in the middle of the
-screen, or as the figure flying in from a close-up. The model's own parameters do it, under names that differ from model to model
-(`ParamBlack`, `ParamCamZoom`, `ParamHeiMuOpen`, `Paramxiangkuangkaiguan`, ...), and some models key them in the touch motions too.
+in or out, a virtual camera that zooms and pans, a spotlight, photo frames. That is the model author's animation, and **the plugin plays a
+motion exactly as authored**: inside a portrait the curtain shows as a dark box in the middle of the screen for the first seconds (the test
+models' lasts about five), and the camera as the figure moving in from a close-up. The model's own parameters do it, under names that differ
+from model to model (`ParamBlack`, `ParamCamZoom`, `ParamHeiMuOpen`, `Paramxiangkuangkaiguan`, ...), and some models key them in the touch
+motions too.
 
-A mod handles this per portrait: `ignore_parameters = { ... }` in an action, or `live2d_ignore_parameters = { ... }` in the portrait entry
-(for every action of it), lists parameter ids, with `*` standing for any run of characters (case does not matter). The curves of a motion
-for those parameters are then not applied: the character's own animation plays, the curtain and the camera do not.
+A mod that does not want an effect in its portraits can leave it out, per portrait: `ignore_parameters = { ... }` in an action, or
+`live2d_ignore_parameters = { ... }` in the portrait entry (for every action of it), lists parameter ids, with `*` standing for any run of
+characters (case does not matter). The curves of a motion for those parameters are then not applied: the character's own animation plays,
+the curtain and the camera do not. Nothing is ignored unless the mod says so.
 
 ```
 l2d_human_male_02 = {

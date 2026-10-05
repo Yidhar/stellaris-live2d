@@ -10,7 +10,11 @@ What it makes, the way a real portrait mod would:
     which model, framing, events, voice lines and expression;
   * gfx/live2d/ holds the models (DXT5 textures, see l2d_pack), sound/ the voice lines.
 
-    python make_human_mod.py [--out <mod folder>] [--models <folder with packed models>] [--enable] [--export-demo <folder>]
+    python make_human_mod.py [--out <mod folder>] [--models <folder with packed models>] [--enable] [--export-demo <folder>] [--ignore-stage]
+
+By default every portrait plays the model's `login` motion as the author made it when it shows up, stage effects included (a black curtain
+that fades away, a camera move). --ignore-stage lists the parameters of those effects in `live2d_ignore_parameters` (found by
+tools/motion_diff.py) so only the character's own animation plays, and gives the one model whose login is a whole scene a wait motion.
 
 --enable also adds the mod to the playset (dlc_load.json, the original is kept as dlc_load.json.live2d_backup).
 --export-demo copies only the text of the mod (descriptor.mod and the two portrait files, no models, no sound) into a folder: the demo mod
@@ -141,6 +145,7 @@ def main():
     ap.add_argument("--out", default=os.path.join(DOCS, "mod", MOD_NAME))
     ap.add_argument("--models", default=os.path.join(ROOT, "models_dxt5"))
     ap.add_argument("--enable", action="store_true")
+    ap.add_argument("--ignore-stage", action="store_true", help="skip the stage parameters of each model's login motion (see above)")
     ap.add_argument("--export-demo", metavar="FOLDER", help="also copy the mod's text files (no art) into FOLDER")
     ap.add_argument("--voices", default=os.path.join(ROOT, "scratch", "voice"),
                     help="folder of WAV/MP3/FLAC/OGG lines every portrait says when clicked (see make_test_voices.ps1); none if missing")
@@ -185,7 +190,10 @@ def main():
                 "# The Live2D side of them is in gfx/portraits/live2d/.\n\nportraits = {\n" + "\n".join(entries) + "\n}\n\n" + group_text())
 
     # the plugin's side
-    ignore = {m: ignored_parameters(a.models, m) for m in set(ASSIGN.values())}
+    ignore = {m: ignored_parameters(a.models, m) if a.ignore_stage else [] for m in set(ASSIGN.values())}
+    global APPEAR
+    if not a.ignore_stage:
+        APPEAR = {}
     side = os.path.join(a.out, "gfx", "portraits", "live2d")
     os.makedirs(side)
     with open(os.path.join(side, "00_live2d_humans.txt"), "w", encoding="utf-8", newline="\n") as f:
