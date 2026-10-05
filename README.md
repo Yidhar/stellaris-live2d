@@ -52,7 +52,7 @@ hooks that function; after the original returns it replaces the portrait's rende
 **Quick start** (the release zip): unpack a zip from the [Releases](https://github.com/Yidhar/stellaris-live2d/releases) page, run
 `python scripts\deploy.py` in the unpacked folder (Python 3.8+; it finds Stellaris in your Steam libraries, or use `--game <folder of
 stellaris.exe>`), enable a portrait mod that uses the plugin (the [demo mod](https://github.com/Yidhar/stellaris-live2d-demo-mod) shows the
-syntax; the models are yours to add) and start the game. `deploy.py` copies the plugin, the loader and a Cubism Core next to `stellaris.exe` and
+syntax and carries its own test models) and start the game. `deploy.py` copies the plugin, the loader and a Cubism Core next to `stellaris.exe` and
 writes `stellaris_live2d.ini`, so nothing else has to be set up. `python scripts\deploy.py --remove` takes it all away again.
 
 The details:
@@ -65,7 +65,7 @@ The details:
    with only the newer API is not supported yet.
 2. **A model**: a folder with `model3.json`, the `moc3`, textures (PNG, JPEG, or DDS in DXT1/DXT3/DXT5, the format of the game's
    own textures: a quarter of the video memory, with the mip chain stored in the file) and optionally `physics3.json` and
-   motions. `l2d_pack` converts a model's PNG textures to DXT5. Models are not included and carry their authors' licenses.
+   motions. `l2d_pack` converts a model's PNG textures to DXT5. This repository includes no models (the demo mod above carries some, credited in its `ASSETS.md`); models carry their authors' licenses.
 3. **The loader.** `deploy.py` copies `stellaris_live2d.dll` and the loader `d3dx9_43.dll` next to `stellaris.exe`, and from then on the game
    loads the plugin by itself a few seconds after it starts (a file `stellaris_live2d.disabled` next to the exe stops the loader for a
    session). The loader is a stand-in for a system DLL that only the game's exe imports: the folder of the exe is searched first, so the
@@ -110,7 +110,8 @@ model's own `model3.json`; the mod only says which to play on which event.
 - Syntax, events, views, loading and the group rules: [docs/portrait-mod-design.md](docs/portrait-mod-design.md).
 - **A demo mod** lives in its own repository, [stellaris-live2d-demo-mod](https://github.com/Yidhar/stellaris-live2d-demo-mod): the `human` portrait group
   replaced with ten Live2D portraits (a `set` for each scope, then `add`s), the vanilla keys bound too, and every event, voice line,
-  view and scale option used once. It ships no models, since the ones it was made with are other people's art: bring your own.
+  view and scale option used once. It carries the nine models (and their motion groups) the plugin was tested with, so it works as it is: they are other people's art
+  (*Girls' Frontline*), included as test material and credited, with the source and how to have them removed, in its `ASSETS.md`.
 - The `login` motion of many models is a stage entrance (black curtain, camera zoom); `live2d_ignore_parameters` skips the curves of the
   parameters you name, and `python tools/motion_diff.py <model3.json>` finds them (see the design doc, *Stage effects in motions*).
 - Two rules worth knowing: a portrait group defined in several files is *merged*, so the first entry of each scope has to be a
