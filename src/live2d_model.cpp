@@ -1,4 +1,5 @@
 #include "live2d_model.hpp"
+#include "utf8_path.hpp"
 
 #include "dds.hpp"
 
@@ -20,14 +21,14 @@ namespace fs = std::filesystem;
 bool LoadImageFile(const fs::path& path, Image* out, std::string* error) {
     std::ifstream f(path, std::ios::binary);
     if (!f) {
-        if (error) *error = "cannot open " + path.string();
+        if (error) *error = "cannot open " + l2d::U8(path);
         return false;
     }
     std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     if (bytes.size() >= 4 && std::memcmp(bytes.data(), "DDS ", 4) == 0) {
         std::string e;
         if (!ParseDds(bytes.data(), bytes.size(), out, &e)) {
-            if (error) *error = path.string() + ": " + e;
+            if (error) *error = l2d::U8(path) + ": " + e;
             return false;
         }
         return true;
@@ -35,7 +36,7 @@ bool LoadImageFile(const fs::path& path, Image* out, std::string* error) {
     int w = 0, h = 0, n = 0;
     uint8_t* px = stbi_load_from_memory(bytes.data(), (int)bytes.size(), &w, &h, &n, 4);
     if (!px) {
-        if (error) *error = "cannot decode " + path.string() + " (DDS, PNG and JPEG are supported): " + stbi_failure_reason();
+        if (error) *error = "cannot decode " + l2d::U8(path) + " (DDS, PNG and JPEG are supported): " + stbi_failure_reason();
         return false;
     }
     out->width = w;
@@ -58,7 +59,7 @@ bool Model::Load(const core::Api* api, const fs::path& model3_json, std::string*
         return false;
     };
     std::ifstream jf(model3_json);
-    if (!jf) return fail("cannot open " + model3_json.string());
+    if (!jf) return fail("cannot open " + l2d::U8(model3_json));
     nlohmann::json j;
     try {
         j = nlohmann::json::parse(jf);

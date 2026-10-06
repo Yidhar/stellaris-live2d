@@ -7,6 +7,7 @@
 // scanned for a COM object that is a D3D11 texture of exactly the portrait's size, bound as a render target; the offset
 // that matched is remembered and re-validated on every use.
 #include "live2d.hpp"
+#include "utf8_path.hpp"
 #include "portrait_live2d.hpp"
 #include "voice.hpp"
 #include "portrait_input.hpp"
@@ -37,19 +38,19 @@ FILE* g_log = nullptr;
 
 std::string PluginDir() {
     HMODULE self = nullptr;
-    char path[MAX_PATH] = {};
-    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&PluginDir, &self))
-        GetModuleFileNameA(self, path, MAX_PATH);
-    std::string s(path);
-    return s.substr(0, s.find_last_of("\\/") + 1);
+    wchar_t path[MAX_PATH * 4] = {};
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)&PluginDir, &self))
+        GetModuleFileNameW(self, path, (DWORD)(sizeof path / sizeof path[0]));
+    std::wstring s(path);
+    return U8(s.substr(0, s.find_last_of(L"\\/") + 1));
 }
 
 void Log(const char* fmt, ...) {
     std::lock_guard<std::mutex> lock(g_log_mutex);
     if (!g_log) {
-        const std::string dir = PluginDir() + "logs";
-        CreateDirectoryA(dir.c_str(), nullptr);
-        g_log = fopen((dir + "\\stellaris_live2d.log").c_str(), "a");
+        const std::wstring dir = W(PluginDir() + "logs");
+        CreateDirectoryW(dir.c_str(), nullptr);
+        g_log = _wfopen((dir + L"\\stellaris_live2d.log").c_str(), L"a");
         if (!g_log) return;
     }
     SYSTEMTIME t;

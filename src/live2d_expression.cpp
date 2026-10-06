@@ -1,4 +1,5 @@
 #include "live2d_expression.hpp"
+#include "utf8_path.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -14,7 +15,7 @@ bool Expression::Load(const std::filesystem::path& path, std::string* error) {
         if (!f) throw std::runtime_error("cannot open the file");
         j = nlohmann::json::parse(f);
     } catch (const std::exception& e) {
-        if (error) *error = path.string() + ": " + e.what();
+        if (error) *error = l2d::U8(path) + ": " + e.what();
         return false;
     }
     fade_in = j.value("FadeInTime", 1.0f);

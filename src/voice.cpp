@@ -1,4 +1,5 @@
 #include "voice.hpp"
+#include "utf8_path.hpp"
 
 #include "live2d.hpp"
 
@@ -113,7 +114,7 @@ bool Voice::Play(const void* owner, const std::filesystem::path& file, float gai
     auto sound = std::make_unique<ma_sound>();
     const ma_result r = ma_sound_init_from_file_w(&impl_->engine, file.c_str(), MA_SOUND_FLAG_STREAM | MA_SOUND_FLAG_NO_SPATIALIZATION, nullptr, nullptr, sound.get());
     if (r != MA_SUCCESS) {
-        Log("voice: cannot play %s (miniaudio error %d: missing file or a format that is not WAV, MP3, FLAC or Ogg Vorbis)", file.string().c_str(), (int)r);
+        Log("voice: cannot play %s (miniaudio error %d: missing file or a format that is not WAV, MP3, FLAC or Ogg Vorbis)", l2d::U8(file).c_str(), (int)r);
         return false;
     }
     ma_sound_set_volume(sound.get(), gain);

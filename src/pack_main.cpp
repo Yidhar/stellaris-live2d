@@ -8,6 +8,7 @@
 // Mips are made from alpha-weighted averages and the colour of fully transparent texels is bled outwards from the picture,
 // so bilinear filtering of the straight-alpha texture does not draw dark or coloured fringes around the art.
 #include "dds.hpp"
+#include "utf8_path.hpp"
 #include "live2d_model.hpp"
 
 #include <algorithm>
@@ -133,12 +134,12 @@ bool Pack(const fs::path& src, const fs::path& dst, fs::path* textures_out, int 
     std::vector<uint8_t> bytes;
     {
         std::ifstream f(src, std::ios::binary);
-        if (!f) { fprintf(stderr, "cannot open %s\n", src.string().c_str()); return false; }
+        if (!f) { fprintf(stderr, "cannot open %s\n", l2d::U8(src).c_str()); return false; }
         bytes.assign((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     }
     int w = 0, h = 0, n = 0;
     uint8_t* raw = stbi_load_from_memory(bytes.data(), (int)bytes.size(), &w, &h, &n, 4);
-    if (!raw) { fprintf(stderr, "cannot decode %s: %s\n", src.string().c_str(), stbi_failure_reason()); return false; }
+    if (!raw) { fprintf(stderr, "cannot decode %s: %s\n", l2d::U8(src).c_str(), stbi_failure_reason()); return false; }
     std::vector<uint8_t> px(raw, raw + (size_t)w * h * 4);
     stbi_image_free(raw);
 
@@ -146,7 +147,7 @@ bool Pack(const fs::path& src, const fs::path& dst, fs::path* textures_out, int 
     while (max_size > 0 && std::max(w, h) > max_size) Downscale(px, w, h);
     if (w % 4 || h % 4) {
         fprintf(stderr, "  %s is %dx%d: a DXT5 texture needs a size that is a multiple of 4 (Live2D textures are normally powers of two)\n",
-                src.filename().string().c_str(), w, h);
+                l2d::U8(src.filename()).c_str(), w, h);
         return false;
     }
 
@@ -162,7 +163,7 @@ bool Pack(const fs::path& src, const fs::path& dst, fs::path* textures_out, int 
         levels.push_back(CompressBc3(lv, chain.mip_width[l], chain.mip_height[l], mode, threads));
     }
     fs::create_directories(dst.parent_path());
-    if (!WriteDds(dst, w, h, levels)) { fprintf(stderr, "cannot write %s\n", dst.string().c_str()); return false; }
+    if (!WriteDds(dst, w, h, levels)) { fprintf(stderr, "cannot write %s\n", l2d::U8(dst).c_str()); return false; }
     (void)textures_out;
     return true;
 }
@@ -189,8 +190,8 @@ int main(int argc, char** argv) {
     if (fs::is_directory(in)) {
         model3.clear();
         for (const auto& e : fs::directory_iterator(in))
-            if (e.path().string().size() > 12 && e.path().string().rfind(".model3.json") == e.path().string().size() - 12) model3 = e.path();
-        if (model3.empty()) { fprintf(stderr, "no .model3.json in %s\n", in.string().c_str()); return 1; }
+            if (l2d::U8(e.path()).size() > 12 && l2d::U8(e.path()).rfind(".model3.json") == l2d::U8(e.path()).size() - 12) model3 = e.path();
+        if (model3.empty()) { fprintf(stderr, "no .model3.json in %s\n", l2d::U8(in).c_str()); return 1; }
     } else {
         dir = in.parent_path();
     }
@@ -200,7 +201,7 @@ int main(int argc, char** argv) {
     {
         std::ifstream f(model3);
         try { j = nlohmann::json::parse(f, nullptr, true, true); }
-        catch (const std::exception& e) { fprintf(stderr, "bad %s: %s\n", model3.string().c_str(), e.what()); return 1; }
+        catch (const std::exception& e) { fprintf(stderr, "bad %s: %s\n", l2d::U8(model3).c_str(), e.what()); return 1; }
     }
     fs::create_directories(out);
     // everything except the textures and the json is copied as it is
@@ -218,7 +219,7 @@ int main(int argc, char** argv) {
     for (size_t i = 0; i < texture_files.size(); ++i) {
         fs::path rel = texture_files[i];
         rel.replace_extension(".dds");
-        printf("  %s -> %s\n", texture_files[i].string().c_str(), rel.string().c_str());
+        printf("  %s -> %s\n", l2d::U8(texture_files[i]).c_str(), l2d::U8(rel).c_str());
         fflush(stdout);
         if (!Pack(dir / texture_files[i], out / rel, nullptr, max_size, mode, threads)) return 1;
         before += fs::file_size(dir / texture_files[i]);
@@ -227,7 +228,7 @@ int main(int argc, char** argv) {
     }
     std::ofstream o(out / model3.filename());
     o << j.dump(2) << "\n";
-    printf("packed %s: %zu texture(s), %.1f MB -> %.1f MB on disk (DXT5 with mips)\n", model3.filename().string().c_str(), texture_files.size(),
+    printf("packed %s: %zu texture(s), %.1f MB -> %.1f MB on disk (DXT5 with mips)\n", l2d::U8(model3.filename()).c_str(), texture_files.size(),
            before / 1048576.0, after / 1048576.0);
     return 0;
 }
