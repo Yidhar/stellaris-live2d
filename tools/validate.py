@@ -19,14 +19,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 HEADER = ROOT / "sdk" / "stellaris_sdk.hpp"
-LAYOUT_VERIFIED_FOR = 0x6AB5181D
+LAYOUT_VERIFIED_FOR = 0x6ABEAA3F  # Stellaris 4.5.2; 4.5.1 was 0x6AB5181D
 
 # name in the header -> the value verified for the exe above (live in the game, or in the disassembly); only compared for that exe
 GROUND_TRUTH = {
-    "CPortraitObject_UpdatePortrait": 0xFB1280,
-    "CPortraitObject_Render": 0xFAD5B0,
-    "CPortraitObject_GetGreetingSoundEffect": 0xFB3CE0,
-    "CPortraitObjectController_PortraitObjects_data": 0x287F8B8,
+    "CPortraitObject_UpdatePortrait": 0xFB19C0,
+    "CPortraitObject_Render": 0xFADCF0,
+    "CPortraitObject_GetGreetingSoundEffect": 0xFB4420,
+    "CPortraitObjectController_PortraitObjects_data": 0x28808B8,
     "CPortraitObject_width": 0x528,
     "CPortraitObject_height": 0x52A,
     "CPortraitObject_needs_render": 0x52C,
@@ -47,7 +47,7 @@ GROUND_TRUTH = {
     "CGuiGraphics_height": 0x2C,
     "CGuiGraphics_gui_width": 0x30,
     "CGuiGraphics_gui_height": 0x34,
-    "CSettings": 0x322E198,
+    "CSettings": 0x322EE90,
     "master": 0x174,
     "dev_master": 0x178,
     "music": 0x180,

@@ -1,4 +1,4 @@
-"""Live check of the portrait interactions in a running game with the plugin loaded and a screen with portraits open (the council,
+r"""Live check of the portrait interactions in a running game with the plugin loaded and a screen with portraits open (the council,
 the leaders list). Waits until the user has been idle for a while, brings the game to the front, does the actions and saves
 screenshots. It moves the mouse and, for `click`, presses the left button: pick a spot where that is harmless.
 
@@ -11,7 +11,7 @@ screenshots. It moves the mouse and, for `click`, presses the left button: pick 
 The council check needs the stellaris-perf helper scripts (game_session.press sends the key); the first council slot of the test save
 is at client pixels (315..642, 130..346).
 
-Screenshots go to captures/<name>_*.png. The plugin's log (stellaris_live2d.log, next to stellaris.exe) says what a click triggered.
+Screenshots go to captures/<name>_*.png. The plugin's log (logs\stellaris_live2d.log in the plugin's folder) says what a click triggered.
 """
 import argparse
 import ctypes

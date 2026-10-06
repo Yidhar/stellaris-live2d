@@ -4,10 +4,11 @@
 #     cmake -S . -B build -G "Visual Studio 17 2022" -A x64 ; cmake --build build --config Release
 #     pwsh scripts/package_release.ps1 -Version dev-local
 #
-# The zip holds the plugin, the loader and a Cubism Core (Purism Core, built by CMake from third_party/purism_core): python scripts\deploy.py
-# installs all three from the unpacked folder and writes the ini, so the plugin works as soon as a portrait mod is enabled. It also holds the
-# helper scripts, the command line tools (l2d_pack, l2d_view, l2d_check when it has been built), the docs, the licenses of what is built into
-# the DLLs (THIRD_PARTY_NOTICES.txt) and a GAME_BUILD.txt that names the game build.
+# The zip's folder IS the plugin folder of the Stellaris launcher's plugin spec v2 (its docs/PLUGINS.md): stl-plugin.json (version and game
+# build stamped here), stellaris_live2d.dll, a Cubism Core (Purism Core, built by CMake from third_party/purism_core) and defaults\, so the
+# launcher's "Install plugin" (or `stl plugin install <folder>`, or python scripts\deploy.py) takes the unpacked folder as it is. It also holds
+# the helper scripts, the command line tools (l2d_pack, l2d_view, l2d_check when it has been built), the docs, the licenses of what is built
+# into the DLLs (THIRD_PARTY_NOTICES.txt) and a GAME_BUILD.txt that names the game build. There is no loader: the launcher injects the plugin.
 param(
     [string]$Version = "dev-local",
     [string]$Build = "build",
@@ -30,9 +31,16 @@ function Need($path) {
     return $path
 }
 Copy-Item (Need "$Build/Release/stellaris_live2d.dll") $dir
-Copy-Item (Need "$Build/loader/d3dx9_43.dll") $dir
+# the manifest, with this release's version and the game build the SDK was generated from
+$manifest = Get-Content -Raw (Need "plugin/stl-plugin.json") | ConvertFrom-Json
+# the release tag is vX.Y.Z and the manifest's version the same without the v (the launcher compares them when it looks for updates)
+if ($Version -match '^v?(\d+\.\d+\.\d+.*)$') { $manifest.version = $Matches[1] }
+$manifest.game.exe_timestamps = @("0x" + $ts.Substring(2).ToUpper())
+$manifest | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM "$dir/stl-plugin.json"
+New-Item -ItemType Directory -Force -Path "$dir/defaults" | Out-Null
+Copy-Item (Need "plugin/defaults/stellaris_live2d.ini") "$dir/defaults/"
 Copy-Item (Need "$Build/Release/Live2DCubismCore.dll") $dir
-foreach ($s in "deploy.py", "l2dctl.py", "desktop_guard.py") { Copy-Item (Need "scripts/$s") "$dir/scripts/" }
+foreach ($s in "deploy.py", "l2dctl.py", "plugin_paths.py", "desktop_guard.py") { Copy-Item (Need "scripts/$s") "$dir/scripts/" }
 foreach ($t in "l2d_pack", "l2d_view", "l2d_check") {
     $exe = "$Build/Release/$t.exe"
     if (Test-Path $exe) { Copy-Item $exe "$dir/tools/" }
@@ -50,7 +58,7 @@ $notices = @(
     "",
     "Live2DCubismCore.dll is Purism Core 1.1.0 (https://github.com/SakuraMotion/PurismCore), built unchanged from its single-file release.",
     "It is a compatible reimplementation of the Cubism Core API, not Live2D's own library; any official Live2DCubismCore.dll can be used in",
-    "its place (core_dll in stellaris_live2d.ini).",
+    "its place (core_dll in config\stellaris_live2d.ini).",
     "",
     "-- Purism Core license --",
     (Get-Content -Raw (Need "third_party/purism_core/LICENSE")),
@@ -78,18 +86,22 @@ $notices = @(
 $notices | Set-Content -Encoding utf8 "$dir/THIRD_PARTY_NOTICES.txt"
 
 @(
-    "Built for the stellaris.exe whose PE timestamp is $ts ($built), Stellaris 4.5.1 (Windows x64).",
+    "Built for the stellaris.exe whose PE timestamp is $ts ($built), Stellaris 4.5.2 (Windows x64).",
     "With any other build the DLL logs the mismatch and installs nothing.",
     "",
-    "Install: python scripts\deploy.py   (copies stellaris_live2d.dll, d3dx9_43.dll and Live2DCubismCore.dll next to stellaris.exe and writes",
-    "stellaris_live2d.ini; --remove undoes it). Then start the game with a portrait mod enabled: see the demo mod, README.md.",
-    "Live2DCubismCore.dll is Purism Core (see THIRD_PARTY_NOTICES.txt); to use Live2D's official library, point core_dll in the ini at it."
+    "Install: in the Stellaris launcher, Plugins page, Install plugin, and choose this folder (or: stl plugin install <this folder>, or",
+    "python scripts\deploy.py). It goes to Documents\Paradox Interactive\Stellaris\plugins\stellaris-live2d\, the settings to its config\",
+    "folder (the gear button on the Plugins page edits them). Start the game with the launcher (Play, or stl launch) and a portrait mod enabled:",
+    "the launcher loads the plugin; a game started from Steam runs without it. See the demo mod and README.md.",
+    "Live2DCubismCore.dll is Purism Core (see THIRD_PARTY_NOTICES.txt); to use Live2D's official library, point core_dll in the settings at it."
 ) | Set-Content -Encoding utf8 "$dir/GAME_BUILD.txt"
 
 Get-ChildItem -Recurse -Directory -Filter __pycache__ $dir | Remove-Item -Recurse -Force
 $zip = Join-Path $Out "$name.zip"
 if (Test-Path $zip) { Remove-Item $zip }
-Compress-Archive -Path $dir -DestinationPath $zip
+# the zip's root is the plugin folder itself (what an update replaces); config\ is the user's and is never packed
+if (Test-Path "$dir/config") { throw "config\ must not be packed" }
+Compress-Archive -Path "$dir/*" -DestinationPath $zip
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
 "$hash  $name.zip" | Set-Content -Encoding ascii "$zip.sha256"
 

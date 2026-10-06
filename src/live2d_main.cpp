@@ -1,6 +1,7 @@
-// stellaris_live2d.dll entry: installs the portrait hook and follows stellaris_live2d.ini (next to stellaris.exe),
-// re-reading it every 2 seconds so settings can be changed while the game runs. Statistics go to stellaris_live2d.log
-// every 30 seconds and on every change.
+// stellaris_live2d.dll entry: installs the portrait hook and follows config\stellaris_live2d.ini in the plugin's own folder
+// (Documents\Paradox Interactive\Stellaris\plugins\stellaris-live2d\, see the launcher's docs/PLUGINS.md), re-reading it every 2 seconds so
+// settings can be changed while the game runs (the launcher's Plugins page edits that file). Statistics go to logs\stellaris_live2d.log
+// every 30 seconds and on every change. The plugin is loaded by the launcher's injection only; it writes nothing into the game folder.
 //
 // Unloading: never FreeLibrary this DLL from outside while the game runs; a game thread may be inside the detour.
 // Signal the event Local\stellaris_live2d_unload_<pid> instead (scripts/l2dctl.py): the worker removes the hook, waits
@@ -11,6 +12,7 @@
 #include <windows.h>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 
 namespace {
@@ -18,15 +20,37 @@ namespace {
 HMODULE g_module = nullptr;
 HANDLE g_unload_event = nullptr;
 
+bool Exists(const std::string& path) {
+    return GetFileAttributesA(path.c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
 std::string IniPath() {
-    char path[MAX_PATH];
-    GetModuleFileNameA(nullptr, path, MAX_PATH);
-    std::string s(path);
-    return s.substr(0, s.find_last_of("\\/") + 1) + "stellaris_live2d.ini";
+    const std::string dir = l2d::PluginDir() + "config";
+    CreateDirectoryA(dir.c_str(), nullptr);
+    return dir + "\\stellaris_live2d.ini";
+}
+
+// Before plugin spec v2 the ini sat next to stellaris.exe: the first time, that one is copied over (and from then on left alone).
+void MigrateOldIni(const std::string& path) {
+    if (Exists(path)) return;
+    char exe[MAX_PATH];
+    GetModuleFileNameA(nullptr, exe, MAX_PATH);
+    std::string old(exe);
+    old = old.substr(0, old.find_last_of("\\/") + 1) + "stellaris_live2d.ini";
+    if (Exists(old) && CopyFileA(old.c_str(), path.c_str(), TRUE)) l2d::Log("settings: copied %s to %s (the old place is no longer read)", old.c_str(), path.c_str());
+}
+
+// `{plugin_dir}` and `{config_dir}` in a value, as the launcher fills them in when it makes the file from defaults\ (for a file written by hand).
+std::string Expand(std::string v) {
+    const std::string dir = l2d::PluginDir();
+    const std::pair<const char*, std::string> keys[] = {{"{plugin_dir}", dir.substr(0, dir.size() - 1)}, {"{config_dir}", dir + "config"}};
+    for (const auto& [key, value] : keys)
+        for (size_t at; (at = v.find(key)) != std::string::npos;) v.replace(at, strlen(key), value);
+    return v;
 }
 
 void WriteDefaultIni(const std::string& path) {
-    if (GetFileAttributesA(path.c_str()) != INVALID_FILE_ATTRIBUTES) return;
+    if (Exists(path)) return;
     if (FILE* f = fopen(path.c_str(), "w")) {
         fputs("; stellaris_live2d.dll settings, re-read every 2 seconds while the game runs.\n"
               "[live2d]\n"
@@ -37,7 +61,7 @@ void WriteDefaultIni(const std::string& path) {
               "only_height=0\n"
               "; Live2D: draw a model into the render target of every visible portrait (0 = off). Needs core_dll and model.\n"
               "live2d=0\n"
-              "; path of Live2DCubismCore.dll (Live2D's own, or a compatible one such as Purism Core); not shipped with this plugin\n"
+              "; path of Live2DCubismCore.dll (Live2D's own, or a compatible one such as Purism Core); empty = the one in the plugin's folder\n"
               "core_dll=\n"
               "; path of the model's model3.json (one model), shown with the view_* values below\n"
               "model=\n"
@@ -79,7 +103,7 @@ std::string IniString(const char* key, const std::string& path) {
     while (!v.empty() && (v.back() == ' ' || v.back() == '\t' || v.back() == '"')) v.pop_back();
     size_t i = 0;
     while (i < v.size() && (v[i] == ' ' || v[i] == '\t' || v[i] == '"')) ++i;
-    return v.substr(i);
+    return Expand(v.substr(i));
 }
 
 float IniFloat(const char* key, float fallback, const std::string& path) {
@@ -91,6 +115,7 @@ l2d::Settings ReadIni(const std::string& path) {
     l2d::Settings s;
     s.live2d = GetPrivateProfileIntA("live2d", "live2d", 0, path.c_str()) != 0;
     s.core_dll = IniString("core_dll", path);
+    if (s.core_dll.empty() && Exists(l2d::PluginDir() + "Live2DCubismCore.dll")) s.core_dll = l2d::PluginDir() + "Live2DCubismCore.dll";
     const float vx = IniFloat("view_x", 0.44f, path), vy = IniFloat("view_y", 0.19f, path), vh = IniFloat("view_h", 0.26f, path);
     // `model=` is one model with the view_* values; `models=` is a list: path|x,y,h or path|auto or just path (view_* values)
     const std::string single = IniString("model", path);
@@ -171,6 +196,8 @@ DWORD WINAPI Worker(LPVOID) {
         Finish();
     }
     const std::string ini = IniPath();
+    l2d::Log("plugin folder %s, settings %s", l2d::PluginDir().c_str(), ini.c_str());
+    MigrateOldIni(ini);
     WriteDefaultIni(ini);
     l2d::Settings last;
     l2d::Registry registry;

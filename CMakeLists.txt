@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
-project(StellarisLive2D LANGUAGES C CXX ASM_MASM)
+project(StellarisLive2D VERSION 0.2.0 LANGUAGES C CXX)
 
-# the plugin and the loader run inside the game: a static runtime, so no Visual C++ redistributable has to be there
+# the plugin runs inside the game: a static runtime, so no Visual C++ redistributable has to be there
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
 set(CMAKE_CXX_STANDARD 20)
@@ -73,14 +73,6 @@ if (MSVC)
     set_source_files_properties(src/voice.cpp PROPERTIES COMPILE_OPTIONS "/W0")
 endif()
 set_target_properties(stellaris_live2d PROPERTIES OUTPUT_NAME "stellaris_live2d" PREFIX "")
-
-# The loader: a stand-in for d3dx9_43.dll (a system DLL only the game's exe imports) that the game loads from its own folder, and that loads
-# the plugin a moment after the game starts (see loader/proxy.cpp and tools/gen_proxy.py). Built into its own folder: a d3dx9_43.dll next to
-# every tool would be picked up by them too.
-add_library(l2d_loader SHARED loader/proxy.cpp loader/proxy_exports.asm loader/proxy_exports.def)
-target_include_directories(l2d_loader PRIVATE loader)
-set_target_properties(l2d_loader PROPERTIES OUTPUT_NAME "d3dx9_43" PREFIX "" RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/loader>")
-target_compile_definitions(l2d_loader PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
 
 # Purism Core (MIT, Sakura Motion Project) built as Live2DCubismCore.dll, so a release works without any other download: the plugin loads a
 # Cubism Core v5 library, and this is a compatible one. The single-file bundle is the upstream release asset v1.1.0, unchanged, in

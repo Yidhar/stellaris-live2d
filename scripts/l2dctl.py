@@ -1,4 +1,4 @@
-"""Load or unload stellaris_live2d.dll in a running Stellaris (Windows, Python 3.8+, no extra packages).
+r"""Load or unload stellaris_live2d.dll in a running Stellaris (Windows, Python 3.8+, no extra packages).
 
     python l2dctl.py load [--wait] [--dll PATH]    inject the DLL (--wait: wait for stellaris.exe to start)
     python l2dctl.py unload                        ask the DLL to remove its hooks and unload itself
@@ -9,8 +9,9 @@ Loading is a remote LoadLibraryW. Unloading never calls FreeLibrary from outside
 inside one of the DLL's detours. Instead this sets the DLL's own event (Local\\stellaris_live2d_unload_<pid>);
 the DLL removes its hooks, waits for in-flight calls to finish and unloads itself.
 
-The injection lasts for that game session only. Nothing is written to the game's files except
-stellaris_live2d.ini and stellaris_live2d.log next to stellaris.exe.
+The injection lasts for that game session only (the Stellaris launcher does the same when it starts the game). The plugin reads
+config\stellaris_live2d.ini and writes logs\stellaris_live2d.log in its own folder (scripts/plugin_paths.py); nothing is written to the
+game's files. By default the DLL of the installed plugin is injected (scripts/deploy.py installs it), else the build output.
 """
 import argparse
 import ctypes
@@ -22,7 +23,12 @@ import time
 MODULE = "stellaris_live2d.dll"
 HERE = os.path.dirname(os.path.abspath(__file__))
 # next to the scripts folder in a release zip, or the CMake output in a source checkout
+sys.path.insert(0, HERE)
+from plugin_paths import PLUGIN_DIR  # noqa: E402
+
+# the installed plugin first: the DLL takes its folder (config\, logs\) from where it is loaded from
 DLL_CANDIDATES = [
+    os.path.join(PLUGIN_DIR, MODULE),
     os.path.join(HERE, "..", MODULE),
     os.path.join(HERE, "..", "build", "Release", MODULE),
 ]
@@ -171,7 +177,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("action", choices=["load", "unload", "reload", "status"])
     ap.add_argument("--wait", action="store_true", help="load: wait until stellaris.exe is running")
-    ap.add_argument("--dll", help=f"path of {MODULE} (default: next to scripts/, or build/Release)")
+    ap.add_argument("--dll", help=f"path of {MODULE} (default: the installed plugin, else next to scripts/, else build/Release)")
     args = ap.parse_args()
 
     pid = find_game(args.wait and args.action in ("load", "reload"))

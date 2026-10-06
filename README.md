@@ -2,16 +2,16 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Live2D portraits for **Stellaris 4.5.1** (Windows x64, the `-dx11` build): a DLL that is loaded into `stellaris.exe` and
+Live2D portraits for **Stellaris 4.5.2** (Windows x64, the `-dx11` build): a DLL that is loaded into `stellaris.exe` and
 draws a Live2D model into the game's own portrait frames. The game keeps doing the layout, the masks and the shaders, and
 only draws portraits that are on screen.
 
 **Status.** Live2D `moc3` models are drawn into the portraits of the game (leaders, pops, species, the council, the planet
 view), animated (motions, physics, expressions, blinking, breathing, lip sync) and interactive (mouse follow, click on the
 picture or on a hit area of the model, hover, appear, idle, greeting sound), with voice lines that follow the game's volume.
-A mod declares all of it in the portrait script syntax, and once `scripts\deploy.py` has installed the loader the game loads
-the plugin by itself. Not done: Spine, `pose3.json`, a test with a UI scale other than 1, a test with Live2D's official Core
-(only Purism Core was used), multiplayer. Built for and tested on Stellaris 4.5.1 only. See the [plan](#plan).
+A mod declares all of it in the portrait script syntax. The plugin is a plugin of the Stellaris launcher (plugin spec v2: it lives in
+`Documents\Paradox Interactive\Stellaris\plugins\stellaris-live2d\` with its settings in `config\`), which loads it when it starts the game. Not done: Spine, `pose3.json`, a test with a UI scale other than 1, a test with Live2D's official Core
+(only Purism Core was used), multiplayer. Built for and tested on Stellaris 4.5.2 only. See the [plan](#plan).
 
 ## How it works
 
@@ -49,11 +49,14 @@ hooks that function; after the original returns it replaces the portrait's rende
 
 ## Install and use
 
-**Quick start** (the release zip): unpack a zip from the [Releases](https://github.com/Yidhar/stellaris-live2d/releases) page, run
-`python scripts\deploy.py` in the unpacked folder (Python 3.8+; it finds Stellaris in your Steam libraries, or use `--game <folder of
-stellaris.exe>`), enable a portrait mod that uses the plugin (the [demo mod](https://github.com/Yidhar/stellaris-live2d-demo-mod) shows the
-syntax and carries its own test models) and start the game. `deploy.py` copies the plugin, the loader and a Cubism Core next to `stellaris.exe` and
-writes `stellaris_live2d.ini`, so nothing else has to be set up. `python scripts\deploy.py --remove` takes it all away again.
+**Quick start** (the release zip): unpack a zip from the [Releases](https://github.com/Yidhar/stellaris-live2d/releases) page into a folder of
+its own (the zip's root is the plugin folder's contents). That folder is the plugin folder: install it with the Stellaris launcher (Plugins page, *Install plugin*, choose the folder; or
+`stl plugin install <folder>`), or with `python scripts\deploy.py` from inside it (Python 3.8+). Either puts it into
+`Documents\Paradox Interactive\Stellaris\plugins\stellaris-live2d\` and makes `config\stellaris_live2d.ini` from `defaults\`. Enable a
+portrait mod that uses the plugin (the [demo mod](https://github.com/Yidhar/stellaris-live2d-demo-mod) shows the syntax and carries its own
+test models) and start the game **with the launcher** (Play, or `stl launch`): it loads the plugin once the game window is up. A game started
+from Steam runs without the plugin; `python scripts\l2dctl.py load` loads it into such a running game for that session.
+`python scripts\deploy.py --remove` takes the plugin away again (its settings in `config\` stay).
 
 The details:
 
@@ -66,15 +69,14 @@ The details:
 2. **A model**: a folder with `model3.json`, the `moc3`, textures (PNG, JPEG, or DDS in DXT1/DXT3/DXT5, the format of the game's
    own textures: a quarter of the video memory, with the mip chain stored in the file) and optionally `physics3.json` and
    motions. `l2d_pack` converts a model's PNG textures to DXT5. This repository includes no models (the demo mod above carries some, credited in its `ASSETS.md`); models carry their authors' licenses.
-3. **The loader.** `deploy.py` copies `stellaris_live2d.dll` and the loader `d3dx9_43.dll` next to `stellaris.exe`, and from then on the game
-   loads the plugin by itself a few seconds after it starts (a file `stellaris_live2d.disabled` next to the exe stops the loader for a
-   session). The loader is a stand-in for a system DLL that only the game's exe imports: the folder of the exe is searched first, so the
-   game picks it up, it passes every call on to the real `d3dx9_43.dll` and loads the plugin (it does nothing in any other program).
-   Without it, `python scripts\l2dctl.py load` injects the plugin into a running game for that session (`unload`, `reload` and `status`
-   work too).
-4. **The ini.** `deploy.py` writes `stellaris_live2d.ini` next to `stellaris.exe` with `live2d=1` and `core_dll` (it only adds keys an
-   existing ini lacks); edit it any time, it is re-read every 2 seconds. Open a screen with portraits (the council, the leaders list), and
-   look at `stellaris_live2d.log` if nothing shows.
+3. **Loading.** The Stellaris launcher injects the plugin into the game it starts (after the window is up); nothing is put into the
+   game folder. `python scripts\l2dctl.py load` does the same for a game that is already running (`unload`, `reload` and `status` work
+   too). The plugin finds its folder from its own DLL, so it behaves the same whoever loaded it.
+4. **The settings.** `config\stellaris_live2d.ini` in the plugin folder (made from `defaults\` on install; `core_dll` empty means the
+   `Live2DCubismCore.dll` next to the plugin). The launcher's Plugins page edits it (the gear button), or any editor does; it is re-read every
+   2 seconds. Open a screen with portraits (the council, the leaders list), and look at `logs\stellaris_live2d.log` in the plugin folder if
+   nothing shows. An earlier version kept the ini next to `stellaris.exe`: the plugin copies it into `config\` once if `config\` has none,
+   and `python scripts\deploy.py --clean-legacy` removes the old loader and files from the game folder.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -151,7 +153,7 @@ plugin off.
 ## Building and releases
 
 CI (`.github/workflows/build-release.yml`) builds every push and pull request on a Windows runner, runs the offline tests and keeps the packaged
-zip as a workflow artifact. Pushing a tag `v*` publishes a GitHub Release with the zip (the plugin, the loader, `scripts/`, the command line tools,
+zip as a workflow artifact. Pushing a tag `v*` publishes a GitHub Release with the zip (the plugin folder: manifest, plugin, Core, defaults; plus `scripts/`, the command line tools,
 the docs and a `GAME_BUILD.txt` naming the game build) and its SHA-256 file; a tag with a hyphen (`v0.2.0-rc1`) is a pre-release.
 `pwsh scripts/package_release.ps1` makes the same zip from a local Release build.
 
@@ -177,10 +179,8 @@ mismatch and installs nothing). After a game patch: `pip install pefile capstone
 
 ## Known limits
 
-- **The loader looks like malware to a scanner.** `d3dx9_43.dll` next to `stellaris.exe` is a stand-in for a system DLL that passes every
-  call on and loads the plugin: the same technique DLL hijacking uses, and antivirus software may flag it. It is built from `loader/` in
-  this repository and does nothing in any program but `stellaris.exe`. Verifying the game's files in Steam removes it; so does
-  `python scripts\deploy.py --remove`. `l2dctl.py load` injects without it.
+- **Loaded by the launcher only.** A game started from Steam or the Paradox Launcher runs without the plugin (there is no loader in the game
+  folder, by design); start it with the Stellaris launcher, or load the plugin into the running game with `l2dctl.py load`.
 - **One game build.** Addresses are located in the installed `stellaris.exe` by `tools/locate.py`; after a game patch the DLL logs the
   mismatch and installs nothing (it cannot crash the game over it). Rerun the locator and `tools/validate.py` and rebuild.
 - **Tested on one machine** (Windows 11, one AMD GPU, 1920x1080, UI scale 1), with Direct3D 11 (`-dx11`) only. Other GPUs, other
@@ -193,8 +193,8 @@ mismatch and installs nothing). After a game patch: `pip install pefile capstone
    textures, portrait-group mods.
 2. **Done:** mouse follow, click, click on hit areas, hover, appear, idle, greeting; expressions, blinking, breathing and lip sync;
    voice lines that follow the game's volume; views per portrait kind and size; supersampling; background loading within a memory budget.
-3. **Done:** the loader that makes the game load the plugin by itself; SDK checks (`tools/validate.py`, the plugin's self-test) and
-   offline tests; CI that builds, tests and packages releases.
+3. **Done:** SDK checks (`tools/validate.py`, the plugin's self-test) and offline tests; CI that builds, tests and packages releases; the
+   plugin layout of the Stellaris launcher (plugin spec v2: own folder, `config\`, loaded by the launcher; the d3dx9 stand-in loader is gone).
 4. A checker for mods (what is wrong with a portrait file before the game is started), Spine, `pose3.json`.
 
 ## Licensing
