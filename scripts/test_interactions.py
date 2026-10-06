@@ -74,7 +74,8 @@ def main():
     out = lambda tag: os.path.join(ROOT, "captures", f"{a.name}_{tag}.png")
     hwnd = prepare(a.idle, a.timeout)
     if a.action == "council":
-        sys.path.insert(0, r"D:\stellaris-perf\bench\scripts")
+        from plugin_paths import PERF_SCRIPTS
+        sys.path.insert(0, PERF_SCRIPTS)
         import game_session as gs
         gs.VK["F2"] = 0x71
         gs.press(gs.game_pids()[0], "F2")

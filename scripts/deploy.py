@@ -26,7 +26,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
-from plugin_paths import CONFIG_INI, GAME_DIR, LOG, PLUGIN_DIR  # noqa: E402
+from plugin_paths import CONFIG_INI, GAME_DIR, LOG, PLUGIN_DIR, need_game_dir  # noqa: E402
 
 LEGACY = ["d3dx9_43.dll", "stellaris_live2d.dll", "Live2DCubismCore.dll", "stellaris_live2d.disabled"]
 
@@ -70,13 +70,14 @@ def make_config():
 
 
 def clean_legacy():
-    old_ini = os.path.join(GAME_DIR, "stellaris_live2d.ini")
+    game = need_game_dir()
+    old_ini = os.path.join(game, "stellaris_live2d.ini")
     if os.path.exists(old_ini) and not os.path.exists(CONFIG_INI):
         os.makedirs(os.path.dirname(CONFIG_INI), exist_ok=True)
         shutil.move(old_ini, CONFIG_INI)
         print(f"moved {old_ini} -> {CONFIG_INI}")
     for name in LEGACY + ["stellaris_live2d.ini", "stellaris_live2d.log"]:
-        p = os.path.join(GAME_DIR, name)
+        p = os.path.join(game, name)
         if os.path.exists(p):
             try:
                 os.remove(p)
@@ -129,7 +130,7 @@ def main():
     if not files["Live2DCubismCore.dll"]:
         print("no Live2DCubismCore.dll found: put one into the plugin folder, or set core_dll in the settings")
     make_config()
-    if any(os.path.exists(os.path.join(GAME_DIR, n)) for n in LEGACY):
+    if GAME_DIR and any(os.path.exists(os.path.join(GAME_DIR, n)) for n in LEGACY):
         print(f"\nnote: {GAME_DIR} still has files of an earlier version (the old loader d3dx9_43.dll loads the old plugin when the game is"
               " started from Steam): python deploy.py --clean-legacy removes them")
     print(f"\nDone. Start Stellaris with the Stellaris launcher (stl launch, or Play) and a portrait mod enabled; the log is {LOG}")

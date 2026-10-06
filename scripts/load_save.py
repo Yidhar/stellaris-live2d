@@ -4,7 +4,7 @@ Live2D portraits can be checked against a real save without any clicking.
     python load_save.py autosave_2200.07.01 --folder 12_-513968080 [--bench]
     python load_save.py restore            # put the original continue_game.json back
 
-Uses the helpers of the stellaris-perf repo (D:\\stellaris-perf\\bench\\scripts): stellaris_bench.dll is injected as the
+Uses the helpers of the stellaris-perf repo (its bench/scripts; STELLARIS_PERF_SCRIPTS, or ../stellaris-perf next to this repo): stellaris_bench.dll is injected as the
 frame counter and to see when the save is loaded and paused; stellaris_perf.dll is NOT loaded.
 """
 import argparse
@@ -14,7 +14,9 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PERF_SCRIPTS = r"D:\stellaris-perf\bench\scripts"
+sys.path.insert(0, HERE)
+from plugin_paths import PERF_SCRIPTS  # noqa: E402
+
 sys.path.insert(0, PERF_SCRIPTS)
 import dllctl  # noqa: E402
 import game_session as gs  # noqa: E402
