@@ -1,4 +1,5 @@
 #include "live2d_physics.hpp"
+#include "utf8_path.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -84,7 +85,7 @@ bool Physics::Load(const std::filesystem::path& path, const Model& model, std::s
             if (s.particles.size() >= 2) settings_.push_back(std::move(s));
         }
     } catch (const std::exception& e) {
-        if (error) *error = path.string() + ": " + e.what();
+        if (error) *error = l2d::U8(path) + ": " + e.what();
         settings_.clear();
         return false;
     }

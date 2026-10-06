@@ -5,6 +5,7 @@
 //   l2d_bench --core Live2DCubismCore.dll --size 575x380 --frames 300 --counts 1,2,4,6,8,12,16
 //             --model path[|x,y,h|auto] [--model ...] [--no-physics]
 #include "live2d_character.hpp"
+#include "utf8_path.hpp"
 #include "live2d_renderer.hpp"
 
 #include <d3d11.h>
@@ -114,7 +115,7 @@ int main(int argc, char** argv) {
         auto it = std::make_unique<Item>();
         const size_t bar = arg.find('|');
         const std::string path = arg.substr(0, bar);
-        it->name = std::filesystem::path(path).parent_path().filename().string();
+        it->name = l2d::U8(std::filesystem::path(path).parent_path().filename());
         if (!it->character.Load(&api, path, &err)) { fprintf(stderr, "%s: %s\n", path.c_str(), err.c_str()); return 1; }
         it->character.set_physics_enabled(physics);
         l2d::Model& m = it->character.model();

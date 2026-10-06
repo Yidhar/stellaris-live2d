@@ -30,8 +30,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
 import motion_diff  # noqa: E402
 
-DOCS = os.path.join(os.path.expanduser("~"), "Documents", "Paradox Interactive", "Stellaris")
-GAME = os.environ.get("STELLARIS_DIR", r"E:\Program Files (x86)\Steam\steamapps\common\Stellaris")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from plugin_paths import DATA_DIR as DOCS, GAME_DIR as GAME  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MOD_NAME = "live2d_humans"
 

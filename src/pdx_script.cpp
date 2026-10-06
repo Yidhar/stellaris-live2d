@@ -1,4 +1,5 @@
 #include "pdx_script.hpp"
+#include "utf8_path.hpp"
 
 #include <cstdlib>
 #include <fstream>
@@ -165,7 +166,7 @@ bool Parse(const std::string& text, Node* root, std::string* error) {
 }
 
 bool ParseFile(const std::string& path, Node* root, std::string* error) {
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(l2d::P(path), std::ios::binary);
     if (!f) {
         if (error) *error = "cannot open " + path;
         return false;

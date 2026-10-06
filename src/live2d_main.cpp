@@ -8,11 +8,13 @@
 // for in-flight calls to drain and unloads the DLL itself.
 #include "live2d.hpp"
 #include "portrait_registry.hpp"
+#include "utf8_path.hpp"
 
 #include <windows.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <string>
 
 namespace {
@@ -20,24 +22,25 @@ namespace {
 HMODULE g_module = nullptr;
 HANDLE g_unload_event = nullptr;
 
+// paths are UTF-8 strings (utf8_path.hpp); the file APIs get them wide
 bool Exists(const std::string& path) {
-    return GetFileAttributesA(path.c_str()) != INVALID_FILE_ATTRIBUTES;
+    return GetFileAttributesW(l2d::W(path).c_str()) != INVALID_FILE_ATTRIBUTES;
 }
 
 std::string IniPath() {
     const std::string dir = l2d::PluginDir() + "config";
-    CreateDirectoryA(dir.c_str(), nullptr);
+    CreateDirectoryW(l2d::W(dir).c_str(), nullptr);
     return dir + "\\stellaris_live2d.ini";
 }
 
 // Before plugin spec v2 the ini sat next to stellaris.exe: the first time, that one is copied over (and from then on left alone).
 void MigrateOldIni(const std::string& path) {
     if (Exists(path)) return;
-    char exe[MAX_PATH];
-    GetModuleFileNameA(nullptr, exe, MAX_PATH);
-    std::string old(exe);
+    wchar_t exe[MAX_PATH * 4];
+    GetModuleFileNameW(nullptr, exe, (DWORD)(sizeof exe / sizeof exe[0]));
+    std::string old = l2d::U8(std::wstring(exe));
     old = old.substr(0, old.find_last_of("\\/") + 1) + "stellaris_live2d.ini";
-    if (Exists(old) && CopyFileA(old.c_str(), path.c_str(), TRUE)) l2d::Log("settings: copied %s to %s (the old place is no longer read)", old.c_str(), path.c_str());
+    if (Exists(old) && CopyFileW(l2d::W(old).c_str(), l2d::W(path).c_str(), TRUE)) l2d::Log("settings: copied %s to %s (the old place is no longer read)", old.c_str(), path.c_str());
 }
 
 // `{plugin_dir}` and `{config_dir}` in a value, as the launcher fills them in when it makes the file from defaults\ (for a file written by hand).
@@ -51,7 +54,7 @@ std::string Expand(std::string v) {
 
 void WriteDefaultIni(const std::string& path) {
     if (Exists(path)) return;
-    if (FILE* f = fopen(path.c_str(), "w")) {
+    if (FILE* f = _wfopen(l2d::W(path).c_str(), L"w")) {
         fputs("; stellaris_live2d.dll settings, re-read every 2 seconds while the game runs.\n"
               "[live2d]\n"
               "; proof of concept: paint a test pattern into the render target of every visible portrait (0 = off)\n"
@@ -96,36 +99,86 @@ void WriteDefaultIni(const std::string& path) {
     }
 }
 
-std::string IniString(const char* key, const std::string& path) {
-    static char buf[16384];
-    GetPrivateProfileStringA("live2d", key, "", buf, sizeof buf, path.c_str());
-    std::string v = buf;
+// The [live2d] section of the ini, read as UTF-8 (a BOM is skipped). Not GetPrivateProfileString: it reads a file in the ANSI code page, so a
+// path with characters outside it (a user folder, a model folder) would come out wrong. Keys are lower case; a later key wins.
+using Ini = std::map<std::string, std::string>;
+
+Ini LoadIni(const std::string& path) {
+    Ini ini;
+    FILE* f = _wfopen(l2d::W(path).c_str(), L"rb");
+    if (!f) return ini;
+    std::string text;
+    char chunk[4096];
+    for (size_t n; (n = fread(chunk, 1, sizeof chunk, f)) > 0;) text.append(chunk, n);
+    fclose(f);
+    if (text.rfind("\xEF\xBB\xBF", 0) == 0) text.erase(0, 3);
+    auto trim = [](std::string v) {
+        while (!v.empty() && (v.back() == ' ' || v.back() == '\t' || v.back() == '\r')) v.pop_back();
+        size_t i = 0;
+        while (i < v.size() && (v[i] == ' ' || v[i] == '\t')) ++i;
+        return v.substr(i);
+    };
+    bool in_section = false;
+    size_t pos = 0;
+    while (pos <= text.size()) {
+        size_t end = text.find('\n', pos);
+        if (end == std::string::npos) end = text.size();
+        const std::string line = trim(text.substr(pos, end - pos));
+        pos = end + 1;
+        if (line.empty() || line[0] == ';' || line[0] == '#') continue;
+        if (line[0] == '[') {
+            std::string name = line.substr(1, line.find(']') == std::string::npos ? std::string::npos : line.find(']') - 1);
+            for (char& c : name) c = (char)tolower((unsigned char)c);
+            in_section = trim(name) == "live2d";
+            continue;
+        }
+        const size_t eq = line.find('=');
+        if (!in_section || eq == std::string::npos) continue;
+        std::string key = trim(line.substr(0, eq));
+        for (char& c : key) c = (char)tolower((unsigned char)c);
+        ini[key] = trim(line.substr(eq + 1));
+    }
+    return ini;
+}
+
+std::string IniString(const char* key, const Ini& ini) {
+    const auto it = ini.find(key);
+    std::string v = it == ini.end() ? std::string() : it->second;
     while (!v.empty() && (v.back() == ' ' || v.back() == '\t' || v.back() == '"')) v.pop_back();
     size_t i = 0;
     while (i < v.size() && (v[i] == ' ' || v[i] == '\t' || v[i] == '"')) ++i;
     return Expand(v.substr(i));
 }
 
-float IniFloat(const char* key, float fallback, const std::string& path) {
-    const std::string v = IniString(key, path);
+float IniFloat(const char* key, float fallback, const Ini& ini) {
+    const std::string v = IniString(key, ini);
     return v.empty() ? fallback : (float)atof(v.c_str());
 }
 
+// like GetPrivateProfileInt: the leading number of the value, the fallback when there is none
+int IniInt(const Ini& ini, const char* key, int fallback) {
+    const std::string v = IniString(key, ini);
+    char* end = nullptr;
+    const long n = strtol(v.c_str(), &end, 10);
+    return end == v.c_str() ? fallback : (int)n;
+}
+
 l2d::Settings ReadIni(const std::string& path) {
+    const Ini ini = LoadIni(path);
     l2d::Settings s;
-    s.live2d = GetPrivateProfileIntA("live2d", "live2d", 0, path.c_str()) != 0;
-    s.core_dll = IniString("core_dll", path);
+    s.live2d = IniInt(ini, "live2d", 0) != 0;
+    s.core_dll = IniString("core_dll", ini);
     if (s.core_dll.empty() && Exists(l2d::PluginDir() + "Live2DCubismCore.dll")) s.core_dll = l2d::PluginDir() + "Live2DCubismCore.dll";
-    const float vx = IniFloat("view_x", 0.44f, path), vy = IniFloat("view_y", 0.19f, path), vh = IniFloat("view_h", 0.26f, path);
+    const float vx = IniFloat("view_x", 0.44f, ini), vy = IniFloat("view_y", 0.19f, ini), vh = IniFloat("view_h", 0.26f, ini);
     // `model=` is one model with the view_* values; `models=` is a list: path|x,y,h or path|auto or just path (view_* values)
-    const std::string single = IniString("model", path);
+    const std::string single = IniString("model", ini);
     if (!single.empty()) {
         l2d::Settings::ModelEntry e;
         e.path = single;
         e.view_x = vx; e.view_y = vy; e.view_h = vh;
         s.models.push_back(e);
     }
-    const std::string list = IniString("models", path);
+    const std::string list = IniString("models", ini);
     for (size_t pos = 0; pos < list.size();) {
         size_t end = list.find(';', pos);
         if (end == std::string::npos) end = list.size();
@@ -149,7 +202,7 @@ l2d::Settings ReadIni(const std::string& path) {
         }
         s.models.push_back(e);
     }
-    const std::string dirs = IniString("extra_mod_dirs", path);
+    const std::string dirs = IniString("extra_mod_dirs", ini);
     for (size_t pos = 0; pos < dirs.size();) {
         size_t end = dirs.find(';', pos);
         if (end == std::string::npos) end = dirs.size();
@@ -159,19 +212,19 @@ l2d::Settings ReadIni(const std::string& path) {
         while (!item.empty() && (item.front() == ' ' || item.front() == '\t')) item.erase(item.begin());
         if (!item.empty()) s.extra_mod_dirs.push_back(item);
     }
-    s.interactions = GetPrivateProfileIntA("live2d", "interactions", 1, path.c_str()) != 0;
-    s.audio = GetPrivateProfileIntA("live2d", "audio", 1, path.c_str()) != 0;
-    s.volume_channel = IniString("volume_channel", path);
+    s.interactions = IniInt(ini, "interactions", 1) != 0;
+    s.audio = IniInt(ini, "audio", 1) != 0;
+    s.volume_channel = IniString("volume_channel", ini);
     if (s.volume_channel != "effects" && s.volume_channel != "none") s.volume_channel = "voice";
-    s.mute_in_background = GetPrivateProfileIntA("live2d", "mute_in_background", 0, path.c_str()) != 0;
-    s.supersample = GetPrivateProfileIntA("live2d", "supersample", 2, path.c_str()) >= 2 ? 2 : 1;
-    s.model_cache_mb = GetPrivateProfileIntA("live2d", "model_cache_mb", 512, path.c_str());
-    s.volume = IniFloat("volume", 0.8f, path);
-    s.fps = GetPrivateProfileIntA("live2d", "fps", 30, path.c_str());
-    s.physics = GetPrivateProfileIntA("live2d", "physics", 1, path.c_str()) != 0;
-    s.test_pattern = GetPrivateProfileIntA("live2d", "test_pattern", 0, path.c_str()) != 0;
-    s.only_width = GetPrivateProfileIntA("live2d", "only_width", 0, path.c_str());
-    s.only_height = GetPrivateProfileIntA("live2d", "only_height", 0, path.c_str());
+    s.mute_in_background = IniInt(ini, "mute_in_background", 0) != 0;
+    s.supersample = IniInt(ini, "supersample", 2) >= 2 ? 2 : 1;
+    s.model_cache_mb = IniInt(ini, "model_cache_mb", 512);
+    s.volume = IniFloat("volume", 0.8f, ini);
+    s.fps = IniInt(ini, "fps", 30);
+    s.physics = IniInt(ini, "physics", 1) != 0;
+    s.test_pattern = IniInt(ini, "test_pattern", 0) != 0;
+    s.only_width = IniInt(ini, "only_width", 0);
+    s.only_height = IniInt(ini, "only_height", 0);
     return s;
 }
 

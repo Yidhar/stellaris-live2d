@@ -2,20 +2,24 @@
 .pdata, a linear disassembler that follows forward branches (MSVC splits functions into hot and cold parts), and an
 index of rip-relative lea targets (string literals, vtables).
 
-Needs `pip install pefile capstone`. The game directory comes from STELLARIS_DIR (default: the usual Steam folder).
+Needs `pip install pefile capstone`. The game directory comes from STELLARIS_DIR, else from the Steam libraries (scripts/plugin_paths.py).
 """
 import bisect
 import collections
 import os
 import re
 import struct
+import sys
 from pathlib import Path
 
 import pefile
 from capstone import CS_ARCH_X86, CS_MODE_64, Cs
 from capstone.x86 import X86_OP_IMM, X86_OP_MEM
 
-GAME_DIR = Path(os.environ.get("STELLARIS_DIR", r"E:\Program Files (x86)\Steam\steamapps\common\Stellaris"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from plugin_paths import need_game_dir  # noqa: E402
+
+GAME_DIR = Path(need_game_dir())
 EXE = GAME_DIR / "stellaris.exe"
 
 

@@ -1,4 +1,5 @@
 #include "portrait_live2d.hpp"
+#include "utf8_path.hpp"
 
 #include "live2d_character.hpp"
 #include "live2d_renderer.hpp"
@@ -338,7 +339,7 @@ void Live2DPainter::Impl::LoaderMain() {
         loaded->api = api_copy;
         loaded->character = std::make_shared<Character>();
         std::string err;
-        if (!loaded->character->Load(api_copy.get(), slot.path, &err)) {
+        if (!loaded->character->Load(api_copy.get(), P(slot.path), &err)) {
             fail(err);
             continue;
         }
@@ -497,7 +498,7 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
     std::string err;
     if (!api) {
         api = std::make_shared<core::Api>();
-        if (!api->Load(std::wstring(s.core_dll.begin(), s.core_dll.end()), &err)) {
+        if (!api->Load(W(s.core_dll), &err)) {
             Log("live2d: %s: %s", s.core_dll.c_str(), err.c_str());
             return;
         }
@@ -519,7 +520,7 @@ void Live2DPainter::Configure(const Settings& s, const Registry& registry) {
         if (it == d.slot_by_path.end()) {
             auto slot = std::make_shared<Slot>();
             slot->path = path;
-            slot->name = std::filesystem::path(path).parent_path().filename().string();
+            slot->name = U8(P(path).parent_path().filename());
             slot->estimate = EstimateBytes(path);
             it = d.slot_by_path.emplace(path, std::move(slot)).first;
         } else if (it->second->state == Slot::State::Failed) {
@@ -801,7 +802,7 @@ PaintResult Live2DPainter::Paint(const void* portrait, const char* key, int kind
         std::string note = motion ? character.last_motion_group() : (act.motion_groups.empty() ? "no motion" : "no matching motion");
         if (expression) note += ", expression " + act.expression;
         else if (!act.expression.empty()) note += ", no expression " + act.expression;
-        if (!line.empty()) note += std::string(said ? ", saying " : ", could not play ") + line.filename().string();
+        if (!line.empty()) note += std::string(said ? ", saying " : ", could not play ") + U8(line.filename());
         Log("live2d: %s on portrait %s (%s) -> %s", what, key, gs.slot->name.c_str(), note.c_str());
     };
     if (interactions) {

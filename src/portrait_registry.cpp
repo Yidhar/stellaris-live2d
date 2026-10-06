@@ -1,4 +1,5 @@
 #include "portrait_registry.hpp"
+#include "utf8_path.hpp"
 
 #include "pdx_script.hpp"
 
@@ -17,12 +18,12 @@ namespace l2d {
 
 namespace {
 
-std::string DocumentsDir() {
+fs::path DocumentsDir() {
     PWSTR w = nullptr;
     fs::path p;
     if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &w))) p = w;
     CoTaskMemFree(w);
-    return (p / "Paradox Interactive" / "Stellaris").string();
+    return p / "Paradox Interactive" / "Stellaris";
 }
 
 uint64_t Mix(uint64_t h, const std::string& s) {
@@ -33,7 +34,7 @@ uint64_t Mix(uint64_t h, const std::string& s) {
 // signature of a file: its path, size and modification time
 uint64_t Sign(uint64_t h, const fs::path& p) {
     std::error_code ec;
-    h = Mix(h, p.string());
+    h = Mix(h, U8(p));
     const auto size = fs::file_size(p, ec);
     h = Mix(h, std::to_string(ec ? 0 : size));
     const auto t = fs::last_write_time(p, ec);
@@ -53,7 +54,7 @@ bool ReadText(const fs::path& p, std::string* out) {
 void ParseAction(const pdx::Node& n, const fs::path& root, EventAction* a) {
     a->enabled = n.block ? n.Bool("enabled", true) : (n.value == "yes" || n.value == "true");
     if (!n.block) return;
-    auto absolute = [&](const std::string& s) { return (root / fs::u8path(s)).lexically_normal().string(); };
+    auto absolute = [&](const std::string& s) { return U8((root / P(s)).lexically_normal()); };
     a->motion_groups = n.List("motion_groups");
     if (!n.Str("motion_group").empty()) a->motion_groups.push_back(n.Str("motion_group"));
     a->motion_index = (int)n.Num("motion_index", -1);
@@ -106,7 +107,7 @@ void ReadEntry(const pdx::Node& e, const fs::path& root, const std::string& file
         reg->messages.push_back(p.source + ": portrait " + p.key + " is " + (p.live2d ? "live2d" : "spine") + " but has no model path; skipped");
         return;
     }
-    p.model = (root / fs::u8path(model)).lexically_normal().string();
+    p.model = U8((root / P(model)).lexically_normal());
     auto read_view = [&](const pdx::Node& v, ViewSpec* spec) {
         spec->auto_view = v.Bool("auto", !v.Find("x"));
         spec->body = (float)v.Num("body", spec->body);
@@ -182,13 +183,13 @@ void ScanFile(const fs::path& file, const fs::path& root, bool sidecar, Registry
     pdx::Node doc;
     std::string err;
     if (!pdx::Parse(text, &doc, &err)) {
-        reg->messages.push_back(file.string() + ": " + err);
+        reg->messages.push_back(U8(file) + ": " + err);
         if (doc.children.empty()) return;
     }
     for (const pdx::Node& top : doc.children) {
         if (!top.block || (top.key != "portraits" && top.key != "live2d_portraits")) continue;
         for (const pdx::Node& e : top.children)
-            if (e.block && !e.key.empty()) ReadEntry(e, root, file.string(), reg);
+            if (e.block && !e.key.empty()) ReadEntry(e, root, U8(file), reg);
     }
 }
 
@@ -211,7 +212,7 @@ void ScanMod(const fs::path& root, const std::string& name, bool parse, Registry
         }
     }
     if (parse && (reg->entries.size() != before || files))
-        reg->messages.push_back("mod " + name + " (" + root.string() + "): " + std::to_string(reg->entries.size() - before) + " portrait key(s) in " + std::to_string(files) + " file(s)");
+        reg->messages.push_back("mod " + name + " (" + U8(root) + "): " + std::to_string(reg->entries.size() - before) + " portrait key(s) in " + std::to_string(files) + " file(s)");
 }
 
 } // namespace

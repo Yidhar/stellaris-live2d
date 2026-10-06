@@ -18,13 +18,11 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-PERF_SCRIPTS = r"D:\stellaris-perf\bench\scripts"
+sys.path.insert(0, HERE)
+from plugin_paths import CONFIG_INI as INI, GAME_DIR, LOG, PERF_SCRIPTS  # noqa: E402
+
 sys.path.insert(0, PERF_SCRIPTS)
 from benchlib import Bench, game_pid  # noqa: E402
-
-GAME_DIR = r"E:\Program Files (x86)\Steam\steamapps\common\Stellaris"
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from plugin_paths import CONFIG_INI as INI, LOG  # noqa: E402
 CORE = os.path.join(ROOT, "scratch", "core", "Live2DCubismCore.dll")
 M = os.path.join(ROOT, "models")
 
