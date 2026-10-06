@@ -60,8 +60,6 @@ def load(name, folder, timeout, inject=True):
     print(f"loaded {name}: day {st['day']} paused={st['paused']}")
     if inject:
         print(l2dctl("load"))
-    else:
-        print("not injecting: the loader (d3dx9_43.dll) loads the plugin")
     return pid
 
 
@@ -70,7 +68,7 @@ def main():
     ap.add_argument("name")
     ap.add_argument("--folder", default="12_-513968080")
     ap.add_argument("--timeout", type=float, default=400)
-    ap.add_argument("--no-inject", action="store_true", help="the loader (d3dx9_43.dll next to the exe) loads the plugin")
+    ap.add_argument("--no-inject", action="store_true", help="do not load the plugin (only the save)")
     a = ap.parse_args()
     if a.name == "restore":
         import shutil

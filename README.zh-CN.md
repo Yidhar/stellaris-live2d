@@ -4,7 +4,7 @@
 
 **Stellaris 4.5.1**（Windows x64，`-dx11` 版本）的 Live2D 肖像：一个注入到 `stellaris.exe` 的 DLL，把 Live2D 模型画进游戏自己的肖像框里。布局、遮罩和着色器仍由游戏负责，而且游戏只会绘制屏幕上看得到的肖像。
 
-**状态。** Live2D `moc3` 模型已经画进游戏的肖像（领袖、人口、物种、议政厅、星球界面），有动画（动作、物理、表情、眨眼、呼吸、口型），也能交互（鼠标跟随、点击画面或模型的点击区域、悬停、出现、待机、问候音效），语音跟随游戏音量。这一切由 mod 用肖像脚本语法声明；用 `scripts\deploy.py` 装上加载器之后，游戏会自己加载插件。还没有做：Spine、`pose3.json`、UI 缩放不等于 1 的测试、用 Live2D 官方 Core 的测试（只用过 Purism Core）、多人游戏。只针对 Stellaris 4.5.1 编译和测试。见[计划](#计划)。
+**状态。** Live2D `moc3` 模型已经画进游戏的肖像（领袖、人口、物种、议政厅、星球界面），有动画（动作、物理、表情、眨眼、呼吸、口型），也能交互（鼠标跟随、点击画面或模型的点击区域、悬停、出现、待机、问候音效），语音跟随游戏音量。这一切由 mod 用肖像脚本语法声明。插件是 Stellaris 启动器的插件（插件规范 v2：放在 `Documents\Paradox Interactive\Stellaris\plugins\stellaris-live2d\`，设置在 `config\`），由启动器在开始游戏时加载。还没有做：Spine、`pose3.json`、UI 缩放不等于 1 的测试、用 Live2D 官方 Core 的测试（只用过 Purism Core）、多人游戏。只针对 Stellaris 4.5.1 编译和测试。见[计划](#计划)。
 
 ## 原理
 
@@ -23,14 +23,14 @@ Stellaris 的肖像是骨骼动画的 2D 人物，渲染到一张渲染目标纹
 
 ## 安装和使用
 
-**快速开始**（发布包）：解压 [Releases](https://github.com/Yidhar/stellaris-live2d/releases) 页面上的 zip，在解压出的文件夹里运行 `python scripts\deploy.py`（需要 Python 3.8+；它会在你的 Steam 库里找到 Stellaris，找不到时用 `--game <stellaris.exe 所在的文件夹>`），启用一个使用该插件的肖像 mod（[演示 mod](https://github.com/Yidhar/stellaris-live2d-demo-mod) 展示了语法，自带测试用的模型），然后启动游戏。`deploy.py` 会把插件、加载器和一个 Cubism Core 复制到 `stellaris.exe` 旁边，并写好 `stellaris_live2d.ini`，不需要再设置别的。`python scripts\deploy.py --remove` 把这些全部撤掉。
+**快速开始**（发布包）：解压 [Releases](https://github.com/Yidhar/stellaris-live2d/releases) 页面上的 zip。解压出的文件夹就是插件文件夹：用 Stellaris 启动器安装（插件页的「安装插件」，选这个文件夹；或 `stl plugin install <文件夹>`），或者在文件夹里运行 `python scripts\deploy.py`（需要 Python 3.8+）。两种方式都会把它放到 `Documents\Paradox Interactive\Stellaris\plugins\stellaris-live2d\`，并从 `defaults\` 生成 `config\stellaris_live2d.ini`。启用一个使用该插件的肖像 mod（[演示 mod](https://github.com/Yidhar/stellaris-live2d-demo-mod) 展示了语法，自带测试用的模型），然后**用启动器**开始游戏（「开始游戏」或 `stl launch`）：游戏窗口出现后启动器会加载插件。从 Steam 直接启动的游戏不带插件；`python scripts\l2dctl.py load` 可以把插件加载进已经在运行的游戏（只在这一次运行有效）。`python scripts\deploy.py --remove` 删除插件（`config\` 里的设置保留）。
 
 细节：
 
-1. **Cubism Core。** 发布包（以及这个仓库的构建）里自带 `Live2DCubismCore.dll`：[Purism Core](https://github.com/SakuraMotion/PurismCore) 1.1.0，一个兼容的重新实现，作者以 MIT 许可证发布，由 `third_party/purism_core/` 原样编译（`-DL2D_BUILD_PURISM_CORE=OFF` 可以不编）。这类重新实现是否被 Live2D 的条款允许，这里没有核实过，所以 Live2D 官方的 `Live2DCubismCore.dll`（来自 live2d.com 的 Cubism SDK for Native，遵守 Live2D 的条款）最稳妥：让 ini 里的 `core_dll` 指向它即可。插件使用 v5 版的 API（`csmGetDrawableRenderOrders` 和颜色相关的函数）；只有新版 API 的库暂不支持。
+1. **Cubism Core。** 发布包（以及这个仓库的构建）里自带 `Live2DCubismCore.dll`：[Purism Core](https://github.com/SakuraMotion/PurismCore) 1.1.0，一个兼容的重新实现，作者以 MIT 许可证发布，由 `third_party/purism_core/` 原样编译（`-DL2D_BUILD_PURISM_CORE=OFF` 可以不编）。这类重新实现是否被 Live2D 的条款允许，这里没有核实过，所以 Live2D 官方的 `Live2DCubismCore.dll`（来自 live2d.com 的 Cubism SDK for Native，遵守 Live2D 的条款）最稳妥：让设置里的 `core_dll` 指向它即可。插件使用 v5 版的 API（`csmGetDrawableRenderOrders` 和颜色相关的函数）；只有新版 API 的库暂不支持。
 2. **模型**：一个文件夹，里面有 `model3.json`、`moc3`、贴图（PNG、JPEG，或 DXT1/DXT3/DXT5 的 DDS，即游戏自己贴图的格式：显存占用是 RGBA8 的四分之一，mip 链存在文件里），可选的有 `physics3.json` 和动作。`l2d_pack` 把模型的 PNG 贴图转成 DXT5。这个仓库不包含模型（上面的演示 mod 自带了一些，署名在它的 `ASSETS.md` 里），模型各有作者的许可证。
-3. **加载器。** `deploy.py` 把 `stellaris_live2d.dll` 和加载器 `d3dx9_43.dll` 复制到 `stellaris.exe` 旁边，之后游戏启动几秒后会自己加载插件（`stellaris.exe` 旁边放一个 `stellaris_live2d.disabled` 文件，这一次运行就不加载）。加载器是替身，替的是只有游戏的 exe 才会导入的一个系统 DLL：exe 所在的文件夹先被搜索，所以游戏会用它；它把每个调用转给真正的 `d3dx9_43.dll`，并加载插件（在别的程序里它什么也不做）。没有它时，`python scripts\l2dctl.py load` 把插件注入到正在运行的游戏里，只在这一次运行有效（还有 `unload`、`reload`、`status`）。
-4. **ini。** `deploy.py` 在 `stellaris.exe` 旁边写 `stellaris_live2d.ini`，含 `live2d=1` 和 `core_dll`（已有的 ini 只补上缺的键）；随时可以编辑，每 2 秒重新读取。打开有肖像的界面（议政厅、领袖列表）；没有显示的话看 `stellaris_live2d.log`。
+3. **加载。** Stellaris 启动器在它启动的游戏窗口出现后注入插件，不往游戏目录放任何东西。`python scripts\l2dctl.py load` 对已在运行的游戏做同样的事（还有 `unload`、`reload`、`status`）。插件根据自己的 DLL 找到所在文件夹，不管由谁加载，行为都一样。
+4. **设置。** 插件文件夹里的 `config\stellaris_live2d.ini`（安装时由 `defaults\` 生成；`core_dll` 留空表示用插件旁边的 `Live2DCubismCore.dll`）。启动器插件页的齿轮按钮可以直接编辑它，也可以用任何编辑器改；每 2 秒重新读取。打开有肖像的界面（议政厅、领袖列表）；没有显示的话看插件文件夹里的 `logs\stellaris_live2d.log`。旧版本把 ini 放在 `stellaris.exe` 旁边：`config\` 里没有设置时插件会把它复制过来一次；`python scripts\deploy.py --clean-legacy` 会删掉游戏目录里旧的加载器和文件。
 
 | 键 | 默认值 | 含义 |
 |---|---|---|
@@ -86,7 +86,7 @@ build\Release\l2d_bench.exe --core Live2DCubismCore.dll --size 575x380 --frames 
 
 ## 编译和发布
 
-CI（`.github/workflows/build-release.yml`）在 Windows runner 上构建每一次推送和拉取请求，运行离线测试，并把打好的 zip 作为工作流产物保留。推送 `v*` 标签会发布一个 GitHub Release，里面有 zip（插件、加载器、`scripts/`、命令行工具、文档和一个写明游戏版本的 `GAME_BUILD.txt`）和它的 SHA-256 文件；带连字符的标签（`v0.2.0-rc1`）是预发布。`pwsh scripts/package_release.ps1` 用本地的 Release 构建打出同样的 zip。
+CI（`.github/workflows/build-release.yml`）在 Windows runner 上构建每一次推送和拉取请求，运行离线测试，并把打好的 zip 作为工作流产物保留。推送 `v*` 标签会发布一个 GitHub Release，里面有 zip（插件文件夹：清单、插件、Core、defaults；另有 `scripts/`、命令行工具、文档和一个写明游戏版本的 `GAME_BUILD.txt`）和它的 SHA-256 文件；带连字符的标签（`v0.2.0-rc1`）是预发布。`pwsh scripts/package_release.ps1` 用本地的 Release 构建打出同样的 zip。
 
 Visual Studio 2022（MSVC，x64）和 CMake 3.20+。MinHook 由 CMake 自动获取；`stb_image` 和 `nlohmann/json` 是 `third_party/` 里的单头文件。
 
@@ -103,7 +103,7 @@ DLL 只适用于它的 SDK 所定位的那个 `stellaris.exe`（加载时检查�
 
 ## 已知限制
 
-- **加载器在扫描软件眼里像恶意程序。** `stellaris.exe` 旁边的 `d3dx9_43.dll` 是一个系统 DLL 的替身，它把每个调用转发出去并加载插件：和 DLL 劫持是同一种手法，杀毒软件可能报警。它由这个仓库的 `loader/` 编译而来，在 `stellaris.exe` 之外的任何程序里什么也不做。在 Steam 里验证游戏文件会把它删掉，`python scripts\deploy.py --remove` 也会。`l2dctl.py load` 不需要它，直接注入。
+- **只由启动器加载。** 从 Steam 或 Paradox 启动器直接开的游戏不带插件（游戏目录里没有加载器，这是有意的）；请用 Stellaris 启动器开游戏，或用 `l2dctl.py load` 把插件加载进正在运行的游戏。
 - **只对应一个游戏版本。** 地址由 `tools/locate.py` 在已安装的 `stellaris.exe` 里定位；游戏更新后 DLL 会在日志里写出不匹配并且什么也不安装（不会因此让游戏崩溃）。重新运行定位器和 `tools/validate.py`，再重新编译。
 - **只在一台机器上测过**（Windows 11、一块 AMD 显卡、1920x1080、UI 缩放 1），只支持 Direct3D 11（`-dx11`）。其他显卡、分辨率和 UI 缩放没有测过；多人游戏没有测过（插件只改变这个客户端画什么）。
 - 没有实现：Spine、`pose3.json`、拖拽和滚轮缩放。物理是独立实现，没有和 Live2D 自己的对比过。
@@ -112,7 +112,7 @@ DLL 只适用于它的 SDK 所定位的那个 `stellaris.exe`（加载时检查�
 
 1. **已完成：** 钩子、纹理写入、恢复、卸载；Core 加载、模型、动作、物理、渲染器；同时多个模型、DXT5 贴图、肖像组 mod。
 2. **已完成：** 鼠标跟随、点击、点击区域、悬停、出现、待机、问候；表情、眨眼、呼吸、口型；跟随游戏音量的语音；按肖像种类和大小的取景；超采样；在内存预算内后台加载。
-3. **已完成：** 让游戏自己加载插件的加载器；SDK 检查（`tools/validate.py`、插件自检）和离线测试；构建、测试并打包发布的 CI。
+3. **已完成：** SDK 检查（`tools/validate.py`、插件自检）和离线测试；构建、测试并打包发布的 CI；Stellaris 启动器的插件布局（插件规范 v2：独立文件夹、`config\`、由启动器加载；d3dx9 替身加载器已移除）。
 4. mod 检查器（启动游戏之前就发现肖像文件的问题）、Spine、`pose3.json`。
 
 ## 授权

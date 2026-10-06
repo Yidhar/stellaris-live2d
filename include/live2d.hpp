@@ -8,7 +8,11 @@ namespace l2d {
 
 struct Registry;
 
-// Log file next to stellaris.exe (stellaris_live2d.log).
+// The plugin's own folder (Documents\Paradox Interactive\Stellaris\plugins\stellaris-live2d\ when the launcher installed it), with a
+// trailing backslash: the folder of this DLL, found from the module that contains this function, never from the game's folder.
+std::string PluginDir();
+
+// Log file: <plugin folder>\logs\stellaris_live2d.log.
 void Log(const char* fmt, ...);
 
 struct Settings {

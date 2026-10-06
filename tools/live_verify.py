@@ -11,7 +11,8 @@ import os
 import sys
 import time
 
-GAME_DIR = os.environ.get("STELLARIS_DIR", r"E:\Program Files (x86)\Steam\steamapps\common\Stellaris")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
+from plugin_paths import LOG  # noqa: E402
 
 
 def last_block(lines):
@@ -25,7 +26,7 @@ def last_block(lines):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--log", default=os.path.join(GAME_DIR, "stellaris_live2d.log"))
+    ap.add_argument("--log", default=LOG)
     ap.add_argument("--wait", type=float, default=0.0, help="wait this long for the pointer check")
     a = ap.parse_args()
     deadline = time.time() + a.wait

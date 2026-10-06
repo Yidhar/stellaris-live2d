@@ -11,7 +11,7 @@ screenshots. It moves the mouse and, for `click`, presses the left button: pick 
 The council check needs the stellaris-perf helper scripts (game_session.press sends the key); the first council slot of the test save
 is at client pixels (315..642, 130..346).
 
-Screenshots go to captures/<name>_*.png. The plugin's log (stellaris_live2d.log, next to stellaris.exe) says what a click triggered.
+Screenshots go to captures/<name>_*.png. The plugin's log (logs\stellaris_live2d.log in the plugin's folder) says what a click triggered.
 """
 import argparse
 import ctypes

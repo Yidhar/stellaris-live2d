@@ -35,14 +35,21 @@ std::mutex g_log_mutex;
 FILE* g_log = nullptr;
 }
 
+std::string PluginDir() {
+    HMODULE self = nullptr;
+    char path[MAX_PATH] = {};
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&PluginDir, &self))
+        GetModuleFileNameA(self, path, MAX_PATH);
+    std::string s(path);
+    return s.substr(0, s.find_last_of("\\/") + 1);
+}
+
 void Log(const char* fmt, ...) {
     std::lock_guard<std::mutex> lock(g_log_mutex);
     if (!g_log) {
-        char path[MAX_PATH];
-        GetModuleFileNameA(nullptr, path, MAX_PATH);
-        char* slash = strrchr(path, '\\');
-        if (slash) strcpy(slash + 1, "stellaris_live2d.log");
-        g_log = fopen(path, "a");
+        const std::string dir = PluginDir() + "logs";
+        CreateDirectoryA(dir.c_str(), nullptr);
+        g_log = fopen((dir + "\\stellaris_live2d.log").c_str(), "a");
         if (!g_log) return;
     }
     SYSTEMTIME t;

@@ -1,6 +1,6 @@
 name: Build and release
 
-# Every push to main and every pull request builds the plugin, the loader and the tools, runs the offline tests (no game needed) and keeps
+# Every push to main and every pull request builds the plugin and the tools, runs the offline tests (no game needed) and keeps
 # the packaged zip as a workflow artifact. Pushing a tag v* (for example v0.1.0) also publishes a GitHub Release with the zip and its
 # SHA-256 file; a tag with a hyphen (v0.2.0-rc1) is marked as a pre-release.
 on:
@@ -32,7 +32,7 @@ jobs:
           python -m py_compile @files
           if ($LASTEXITCODE -ne 0) { throw "py_compile failed" }
 
-      # ---- MSVC x64 (MASM for the loader); MinHook comes from FetchContent
+      # ---- MSVC x64; MinHook comes from FetchContent
       - name: Configure
         run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
       - name: Build
@@ -66,13 +66,13 @@ jobs:
             Built for **Stellaris 4.5.1** (Windows x64), `stellaris.exe` PE timestamp `${{ steps.package.outputs.exe_timestamp }}` (${{ steps.package.outputs.exe_built }}).
             The DLL only works with that exact game build; with any other it logs the mismatch and installs nothing.
 
-            **Quick start:** unpack the zip, run `python scripts\deploy.py` (Python 3.8+; it finds Stellaris in your Steam libraries, or use `--game`) and
-            start the game with a portrait mod enabled. `deploy.py` copies the plugin, the loader and a Cubism Core next to `stellaris.exe` and writes
-            `stellaris_live2d.ini`; `deploy.py --remove` undoes it.
+            **Quick start:** the unpacked folder is the plugin folder. Install it with the Stellaris launcher (Plugins page, *Install plugin*; or
+            `stl plugin install <folder>`) or `python scripts\deploy.py`: it goes to `Documents\Paradox Interactive\Stellaris\plugins\stellaris-live2d\`
+            with its settings in `config\`. Start the game with the launcher and a portrait mod enabled; `python scripts\l2dctl.py load` loads it into a
+            game that is already running.
 
             The zip includes [Purism Core](https://github.com/SakuraMotion/PurismCore) 1.1.0 (MIT) as `Live2DCubismCore.dll`, built unchanged in CI. Whether
-            such a reimplementation is allowed under Live2D's terms has not been checked, so Live2D's own library can be used instead (`core_dll` in the ini).
-            The loader `d3dx9_43.dll` is a stand-in for a system DLL and some antivirus software flags it; the README's "Known limits" explains why, and
-            the source is in `loader/`. The licenses of what is built into the DLLs are in `THIRD_PARTY_NOTICES.txt`.
+            such a reimplementation is allowed under Live2D's terms has not been checked, so Live2D's own library can be used instead (`core_dll` in the settings).
+            The licenses of what is built into the DLLs are in `THIRD_PARTY_NOTICES.txt`.
 
             Models are not included either: see the [demo mod](https://github.com/Yidhar/stellaris-live2d-demo-mod) for the mod syntax.

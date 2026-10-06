@@ -3,7 +3,7 @@ and with N models, one fresh plugin load per configuration so its counters start
 
 Needs: a running Stellaris with a save loaded and a screen with portraits open (the council screen shows six), the
 stellaris_bench.dll frame counter from the stellaris-perf repo loaded (python dllctl.py load bench), and the Live2D models in
-models/ (see README). Writes stellaris_live2d.ini next to stellaris.exe and restores it afterwards.
+models/ (see README). Writes the plugin's config\stellaris_live2d.ini and restores it afterwards.
 
     python ingame_multi_bench.py [--seconds 30] [--shots captures/multi]
 """
@@ -23,8 +23,8 @@ sys.path.insert(0, PERF_SCRIPTS)
 from benchlib import Bench, game_pid  # noqa: E402
 
 GAME_DIR = r"E:\Program Files (x86)\Steam\steamapps\common\Stellaris"
-INI = os.path.join(GAME_DIR, "stellaris_live2d.ini")
-LOG = os.path.join(GAME_DIR, "stellaris_live2d.log")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from plugin_paths import CONFIG_INI as INI, LOG  # noqa: E402
 CORE = os.path.join(ROOT, "scratch", "core", "Live2DCubismCore.dll")
 M = os.path.join(ROOT, "models")
 
