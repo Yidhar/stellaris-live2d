@@ -1,4 +1,4 @@
-"""Live check of the portrait interactions in a running game with the plugin loaded and a screen with portraits open (the council,
+r"""Live check of the portrait interactions in a running game with the plugin loaded and a screen with portraits open (the council,
 the leaders list). Waits until the user has been idle for a while, brings the game to the front, does the actions and saves
 screenshots. It moves the mouse and, for `click`, presses the left button: pick a spot where that is harmless.
 

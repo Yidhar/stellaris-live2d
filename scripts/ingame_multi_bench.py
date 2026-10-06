@@ -1,4 +1,4 @@
-"""In-game cost of several different Live2D models drawn at once: frames per second and process CPU with the plugin off
+r"""In-game cost of several different Live2D models drawn at once: frames per second and process CPU with the plugin off
 and with N models, one fresh plugin load per configuration so its counters start at zero.
 
 Needs: a running Stellaris with a save loaded and a screen with portraits open (the council screen shows six), the

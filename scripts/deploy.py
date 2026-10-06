@@ -91,12 +91,14 @@ def main():
     ap.add_argument("--remove", action="store_true")
     ap.add_argument("--clean-legacy", action="store_true")
     a = ap.parse_args()
-    if game_running():
-        unload_plugin()
     if a.clean_legacy:
+        if game_running():
+            raise SystemExit("close the game first: it has the old loader (d3dx9_43.dll) loaded, so it cannot be removed")
         clean_legacy()
         if not a.remove:
             return 0
+    if game_running():
+        unload_plugin()
     if a.remove:
         if os.path.isdir(PLUGIN_DIR):
             for name in os.listdir(PLUGIN_DIR):

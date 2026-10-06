@@ -49,6 +49,16 @@ jobs:
           $ver = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME } else { "dev-$($env:GITHUB_SHA.Substring(0, 7))" }
           ./scripts/package_release.ps1 -Version $ver
 
+      # the zip is what the launcher installs and updates from: its root is the plugin folder, the manifest names the update source, a tag's
+      # version is the manifest's, the .sha256 matches (tools/check_package.py; the launcher's docs/PLUGINS.md is the spec)
+      - name: Check the package
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem package/*.zip | Select-Object -First 1
+          if ($env:GITHUB_REF_TYPE -eq "tag") { python tools/check_package.py $zip.FullName --tag $env:GITHUB_REF_NAME }
+          else { python tools/check_package.py $zip.FullName }
+          if ($LASTEXITCODE -ne 0) { throw "the package does not follow the plugin spec" }
+
       - uses: actions/upload-artifact@v4
         with:
           name: stellaris-live2d-${{ steps.package.outputs.version }}
