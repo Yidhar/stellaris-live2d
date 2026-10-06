@@ -23,7 +23,7 @@ Stellaris 的肖像是骨骼动画的 2D 人物，渲染到一张渲染目标纹
 
 ## 安装和使用
 
-**快速开始**（发布包）：解压 [Releases](https://github.com/Yidhar/stellaris-live2d/releases) 页面上的 zip。解压出的文件夹就是插件文件夹：用 Stellaris 启动器安装（插件页的「安装插件」，选这个文件夹；或 `stl plugin install <文件夹>`），或者在文件夹里运行 `python scripts\deploy.py`（需要 Python 3.8+）。两种方式都会把它放到 `Documents\Paradox Interactive\Stellaris\plugins\stellaris-live2d\`，并从 `defaults\` 生成 `config\stellaris_live2d.ini`。启用一个使用该插件的肖像 mod（[演示 mod](https://github.com/Yidhar/stellaris-live2d-demo-mod) 展示了语法，自带测试用的模型），然后**用启动器**开始游戏（「开始游戏」或 `stl launch`）：游戏窗口出现后启动器会加载插件。从 Steam 直接启动的游戏不带插件；`python scripts\l2dctl.py load` 可以把插件加载进已经在运行的游戏（只在这一次运行有效）。`python scripts\deploy.py --remove` 删除插件（`config\` 里的设置保留）。
+**快速开始**（发布包）：把 [Releases](https://github.com/Yidhar/stellaris-live2d/releases) 页面上的 zip 解压到一个单独的文件夹（zip 的根目录就是插件文件夹的内容），这个文件夹就是插件文件夹：用 Stellaris 启动器安装（插件页的「安装插件」，选这个文件夹；或 `stl plugin install <文件夹>`），或者在文件夹里运行 `python scripts\deploy.py`（需要 Python 3.8+）。两种方式都会把它放到 `Documents\Paradox Interactive\Stellaris\plugins\stellaris-live2d\`，并从 `defaults\` 生成 `config\stellaris_live2d.ini`。启用一个使用该插件的肖像 mod（[演示 mod](https://github.com/Yidhar/stellaris-live2d-demo-mod) 展示了语法，自带测试用的模型），然后**用启动器**开始游戏（「开始游戏」或 `stl launch`）：游戏窗口出现后启动器会加载插件。从 Steam 直接启动的游戏不带插件；`python scripts\l2dctl.py load` 可以把插件加载进已经在运行的游戏（只在这一次运行有效）。`python scripts\deploy.py --remove` 删除插件（`config\` 里的设置保留）。
 
 细节：
 

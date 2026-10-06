@@ -33,6 +33,7 @@ function Need($path) {
 Copy-Item (Need "$Build/Release/stellaris_live2d.dll") $dir
 # the manifest, with this release's version and the game build the SDK was generated from
 $manifest = Get-Content -Raw (Need "plugin/stl-plugin.json") | ConvertFrom-Json
+# the release tag is vX.Y.Z and the manifest's version the same without the v (the launcher compares them when it looks for updates)
 if ($Version -match '^v?(\d+\.\d+\.\d+.*)$') { $manifest.version = $Matches[1] }
 $manifest.game.exe_timestamps = @("0x" + $ts.Substring(2).ToUpper())
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM "$dir/stl-plugin.json"
@@ -98,7 +99,9 @@ $notices | Set-Content -Encoding utf8 "$dir/THIRD_PARTY_NOTICES.txt"
 Get-ChildItem -Recurse -Directory -Filter __pycache__ $dir | Remove-Item -Recurse -Force
 $zip = Join-Path $Out "$name.zip"
 if (Test-Path $zip) { Remove-Item $zip }
-Compress-Archive -Path $dir -DestinationPath $zip
+# the zip's root is the plugin folder itself (what an update replaces); config\ is the user's and is never packed
+if (Test-Path "$dir/config") { throw "config\ must not be packed" }
+Compress-Archive -Path "$dir/*" -DestinationPath $zip
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
 "$hash  $name.zip" | Set-Content -Encoding ascii "$zip.sha256"
 

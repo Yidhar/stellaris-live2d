@@ -49,8 +49,8 @@ hooks that function; after the original returns it replaces the portrait's rende
 
 ## Install and use
 
-**Quick start** (the release zip): unpack a zip from the [Releases](https://github.com/Yidhar/stellaris-live2d/releases) page. The unpacked
-folder is the plugin folder: install it with the Stellaris launcher (Plugins page, *Install plugin*, choose the folder; or
+**Quick start** (the release zip): unpack a zip from the [Releases](https://github.com/Yidhar/stellaris-live2d/releases) page into a folder of
+its own (the zip's root is the plugin folder's contents). That folder is the plugin folder: install it with the Stellaris launcher (Plugins page, *Install plugin*, choose the folder; or
 `stl plugin install <folder>`), or with `python scripts\deploy.py` from inside it (Python 3.8+). Either puts it into
 `Documents\Paradox Interactive\Stellaris\plugins\stellaris-live2d\` and makes `config\stellaris_live2d.ini` from `defaults\`. Enable a
 portrait mod that uses the plugin (the [demo mod](https://github.com/Yidhar/stellaris-live2d-demo-mod) shows the syntax and carries its own
