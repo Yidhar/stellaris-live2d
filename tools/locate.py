@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # CGuiGraphics::Render2dTree (it stores the absolute position at +0x68 and reads the pointer from the graphics object) and of
 # CPortraitObject::Render (see docs/engine-notes.md); verified for this build only. The plugin checks every value it reads
 # for plausibility and falls back to the middle of the window when a value is nonsense.
-LAYOUT_VERIFIED_FOR = 0x6AB5181D
+LAYOUT_VERIFIED_FOR = 0x6ABEAA3F
 LITERAL = r"C:\mnt\gsg\stellaris\augustus\augustus\source\graphics\portraitobject.cpp:467"
 RENDER_STRING = "Invalid alternate sprite configuration index [%i], must be in range [%i, %i)"
 

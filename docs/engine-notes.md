@@ -1,7 +1,8 @@
-# Engine notes (Stellaris 4.5.1, Windows x64)
+# Engine notes (Stellaris 4.5.2, Windows x64; first written for 4.5.1)
 
 What the plugin relies on inside `stellaris.exe` and how each fact was established. Addresses are RVAs of the exe with
-timestamp `0x6ab5181d`; `tools/locate.py` finds the functions and the offsets it can by fingerprint and writes
+timestamp `0x6ab5181d` (4.5.1); for 4.5.2 (`0x6abeaa3f`) the locator moved the functions and globals, every object offset stayed, and the
+layout constants were re-checked by the plugin's self-test in the game (all PASS). `tools/locate.py` finds the functions and the offsets it can by fingerprint and writes
 `sdk/stellaris_sdk.hpp`; the rest are layout constants listed under "Layout constants". Tags: **[V]** verified in the Windows
 disassembly, **[L]** read in the Linux decompile only, **[I]** inferred, **[G]** checked in the running game.
 

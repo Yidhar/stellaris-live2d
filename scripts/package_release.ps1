@@ -86,7 +86,7 @@ $notices = @(
 $notices | Set-Content -Encoding utf8 "$dir/THIRD_PARTY_NOTICES.txt"
 
 @(
-    "Built for the stellaris.exe whose PE timestamp is $ts ($built), Stellaris 4.5.1 (Windows x64).",
+    "Built for the stellaris.exe whose PE timestamp is $ts ($built), Stellaris 4.5.2 (Windows x64).",
     "With any other build the DLL logs the mismatch and installs nothing.",
     "",
     "Install: in the Stellaris launcher, Plugins page, Install plugin, and choose this folder (or: stl plugin install <this folder>, or",

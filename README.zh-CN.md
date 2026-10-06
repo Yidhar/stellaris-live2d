@@ -2,9 +2,9 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-**Stellaris 4.5.1**（Windows x64，`-dx11` 版本）的 Live2D 肖像：一个注入到 `stellaris.exe` 的 DLL，把 Live2D 模型画进游戏自己的肖像框里。布局、遮罩和着色器仍由游戏负责，而且游戏只会绘制屏幕上看得到的肖像。
+**Stellaris 4.5.2**（Windows x64，`-dx11` 版本）的 Live2D 肖像：一个注入到 `stellaris.exe` 的 DLL，把 Live2D 模型画进游戏自己的肖像框里。布局、遮罩和着色器仍由游戏负责，而且游戏只会绘制屏幕上看得到的肖像。
 
-**状态。** Live2D `moc3` 模型已经画进游戏的肖像（领袖、人口、物种、议政厅、星球界面），有动画（动作、物理、表情、眨眼、呼吸、口型），也能交互（鼠标跟随、点击画面或模型的点击区域、悬停、出现、待机、问候音效），语音跟随游戏音量。这一切由 mod 用肖像脚本语法声明。插件是 Stellaris 启动器的插件（插件规范 v2：放在 `Documents\Paradox Interactive\Stellaris\plugins\stellaris-live2d\`，设置在 `config\`），由启动器在开始游戏时加载。还没有做：Spine、`pose3.json`、UI 缩放不等于 1 的测试、用 Live2D 官方 Core 的测试（只用过 Purism Core）、多人游戏。只针对 Stellaris 4.5.1 编译和测试。见[计划](#计划)。
+**状态。** Live2D `moc3` 模型已经画进游戏的肖像（领袖、人口、物种、议政厅、星球界面），有动画（动作、物理、表情、眨眼、呼吸、口型），也能交互（鼠标跟随、点击画面或模型的点击区域、悬停、出现、待机、问候音效），语音跟随游戏音量。这一切由 mod 用肖像脚本语法声明。插件是 Stellaris 启动器的插件（插件规范 v2：放在 `Documents\Paradox Interactive\Stellaris\plugins\stellaris-live2d\`，设置在 `config\`），由启动器在开始游戏时加载。还没有做：Spine、`pose3.json`、UI 缩放不等于 1 的测试、用 Live2D 官方 Core 的测试（只用过 Purism Core）、多人游戏。只针对 Stellaris 4.5.2 编译和测试。见[计划](#计划)。
 
 ## 原理
 

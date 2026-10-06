@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Live2D portraits for **Stellaris 4.5.1** (Windows x64, the `-dx11` build): a DLL that is loaded into `stellaris.exe` and
+Live2D portraits for **Stellaris 4.5.2** (Windows x64, the `-dx11` build): a DLL that is loaded into `stellaris.exe` and
 draws a Live2D model into the game's own portrait frames. The game keeps doing the layout, the masks and the shaders, and
 only draws portraits that are on screen.
 
@@ -11,7 +11,7 @@ view), animated (motions, physics, expressions, blinking, breathing, lip sync) a
 picture or on a hit area of the model, hover, appear, idle, greeting sound), with voice lines that follow the game's volume.
 A mod declares all of it in the portrait script syntax. The plugin is a plugin of the Stellaris launcher (plugin spec v2: it lives in
 `Documents\Paradox Interactive\Stellaris\plugins\stellaris-live2d\` with its settings in `config\`), which loads it when it starts the game. Not done: Spine, `pose3.json`, a test with a UI scale other than 1, a test with Live2D's official Core
-(only Purism Core was used), multiplayer. Built for and tested on Stellaris 4.5.1 only. See the [plan](#plan).
+(only Purism Core was used), multiplayer. Built for and tested on Stellaris 4.5.2 only. See the [plan](#plan).
 
 ## How it works
 
