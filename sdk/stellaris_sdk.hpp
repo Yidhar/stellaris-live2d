@@ -5,24 +5,24 @@
 #include <cstdint>
 
 namespace sdk {
-inline constexpr uint32_t kExeTimestamp = 0x6ab5181d;  // PE TimeDateStamp this SDK was located in
+inline constexpr uint32_t kExeTimestamp = 0x6abeaa3f;  // PE TimeDateStamp this SDK was located in
 
 namespace fn {
     // void (*)(void* portrait, void* graphics, void* context): renders one visible portrait into its render target
-    inline constexpr uintptr_t CPortraitObject_UpdatePortrait = 0xfb1280;
+    inline constexpr uintptr_t CPortraitObject_UpdatePortrait = 0xfb19c0;
     // void (*)(void* self, void* guiGraphics, void* ctx, const float* matrix16, float alpha, uint16_t state, void* texture): the GUI
     // draws the portrait's render target; the matrix holds the absolute position, guiGraphics is the engine's CGuiGraphics
-    inline constexpr uintptr_t CPortraitObject_Render = 0xfad5b0;
+    inline constexpr uintptr_t CPortraitObject_Render = 0xfadcf0;
     // void* (*)(void* portrait): the sound effect of the portrait's greeting (null if there is none); its callers play it
-    inline constexpr uintptr_t CPortraitObject_GetGreetingSoundEffect = 0xfb3ce0;
+    inline constexpr uintptr_t CPortraitObject_GetGreetingSoundEffect = 0xfb4420;
 }  // namespace fn
 
 namespace glob {
     // pointer to the engine's settings object (settings.txt as the game uses it right now)
-    inline constexpr uintptr_t CSettings = 0x322e198;
+    inline constexpr uintptr_t CSettings = 0x322ee90;
     // The engine's array of every portrait object (CPdxArray<CPortraitObject*>): RVA of its data pointer and of its int count
-    inline constexpr uintptr_t CPortraitObjectController_PortraitObjects_data = 0x287f8b8;
-    inline constexpr uintptr_t CPortraitObjectController_PortraitObjects_count = 0x287f8c4;
+    inline constexpr uintptr_t CPortraitObjectController_PortraitObjects_data = 0x28808b8;
+    inline constexpr uintptr_t CPortraitObjectController_PortraitObjects_count = 0x28808c4;
 }  // namespace glob
 
 namespace rt {
