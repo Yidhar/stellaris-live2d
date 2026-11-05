@@ -16,10 +16,13 @@ from plugin_paths import LOG  # noqa: E402
 
 
 def last_block(lines):
-    """The selftest lines of the most recent run (a run starts at `selftest: key`)."""
+    """The selftest lines of the running game: the log is appended to, so older games must not count (a game starts at the first hook line,
+    a self-test at `selftest: key`)."""
     start = None
     for i, line in enumerate(lines):
-        if "selftest: key" in line:
+        if "hooked CPortraitObject::UpdatePortrait" in line:
+            start = None
+        elif "selftest: key" in line:
             start = i
     return [l for l in lines[start:] if "selftest:" in l] if start is not None else []
 
