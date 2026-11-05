@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(StellarisLive2D VERSION 0.2.0 LANGUAGES C CXX)
+project(StellarisLive2D VERSION 0.2.1 LANGUAGES C CXX)
 
 # the plugin runs inside the game: a static runtime, so no Visual C++ redistributable has to be there
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
