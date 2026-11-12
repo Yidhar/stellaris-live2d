@@ -2,13 +2,13 @@
   "schema": 2,
   "id": "stellaris-live2d",
   "name": "Live2D portraits",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Draws Live2D models into Stellaris' portraits (portrait mods declare them).",
   "homepage": "https://github.com/Yidhar/stellaris-live2d",
   "dll": "stellaris_live2d.dll",
   "game": {
     "exe_timestamps": [
-      "0x6AE49C1B"
+      "0x6AF23393"
     ]
   },
   "load": {
